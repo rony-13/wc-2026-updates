@@ -8,10 +8,16 @@ A tiny, self-contained **macOS desktop dashboard** for the FIFA World Cup 2026
 - **All 12 group tables** below, recomputed **live** from match results and
   refreshing every **60 seconds**, with the **top two of each group highlighted
   in green** (the teams that advance).
+- **Your teams**: pick **one favorite** (gold star + a warm amber row that also
+  tints its match in today's strip) and **follow as many others** as you like
+  (a cooler blue row). Both stand out above the rest while the green "advances"
+  marker stays visible.
 
 Python + Flask backend, a minimal vanilla-JS frontend, **no database**, and a
 CSV cache so it keeps working offline. Free to run with **zero configuration and
 zero cost**.
+
+**Repository:** <https://github.com/rony-13/wc-2026-updates>
 
 ![Dashboard screenshot](docs/screenshot.png)
 
@@ -38,7 +44,7 @@ an upstream rate limit.
 
 ```bash
 git clone https://github.com/rony-13/wc-2026-updates.git
-cd worldcup-2026-dashboard
+cd wc-2026-updates
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run.py
@@ -121,6 +127,8 @@ environment and never writes it to logs or the CSV cache. To get a free key
   committed seed.
 - **Service** (`app/service.py`) keeps state, refreshes on a schedule, and
   answers the two questions the UI asks.
+- **Preferences** (`app/preferences.py`) persists your favorite + followed teams
+  to a small JSON file — no database, no account.
 
 ### API endpoints
 
@@ -129,7 +137,40 @@ environment and never writes it to logs or the CSV cache. To get a free key
 | `GET /` | The dashboard page. |
 | `GET /api/today` | Today's matches (and any in-progress match). |
 | `GET /api/groups` | All 12 group tables with `qualifies` flags. |
+| `GET /api/teams` | The 48 nations, for the team picker. |
+| `GET` / `PUT /api/preferences` | Read / save your favorite + followed teams. |
 | `GET /api/health` | Source and last-updated timestamp. |
+
+---
+
+## Pick your teams
+
+Pick **one favorite** team and **follow as many others** as you like. Your
+choices are highlighted across the whole dashboard and saved between restarts.
+
+**1. Open the picker.** Click **★ My Teams** in the top-right of the title bar.
+
+**2. Set your favorite.** Click the **★** next to a team to make it your
+favorite. Picking a new favorite replaces the old one — you get exactly one.
+
+**3. Follow other teams.** Click **Follow** next to any teams you want to track —
+follow as many as you like. (A team can't be both your favorite and followed;
+favoriting a team you already follow moves it over automatically.)
+
+![The My Teams picker](docs/my-teams-picker.png)
+
+**4. See them on the board.** Your picks stand out everywhere:
+
+- **Favorite** — a gold **★** and a warm amber row. When your favorite plays
+  today, its scorecard at the top is tinted the same color.
+- **Following** — a cooler blue row.
+- A favorite or followed team that is also in the top two keeps its **green rank
+  badge**, so "this is my team" and "this team advances" stay visible at once.
+
+![Favorite and followed teams highlighted on the dashboard](docs/my-teams-highlighted.png)
+
+Your selection is saved on the backend in `data/cache/preferences.json` (no
+database, no account) and persists across restarts.
 
 ---
 

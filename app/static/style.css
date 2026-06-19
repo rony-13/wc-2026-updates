@@ -10,6 +10,13 @@
   --live: #ff5252;
   --accent: #f4c95d;
 
+  /* personal allegiance tiers (distinct from the green/red/accent signals) */
+  --fav: #ff9f1c;                         /* favorite — warmest, most eye-catching */
+  --fav-tint: rgba(255, 159, 28, 0.16);
+  --fav-glow: rgba(255, 159, 28, 0.32);
+  --follow: #4fc3f7;                      /* following — cooler, secondary */
+  --follow-tint: rgba(79, 195, 247, 0.13);
+
   --font-display: "Arial Narrow", "Roboto Condensed", "Helvetica Neue Condensed",
     "Liberation Sans Narrow", system-ui, sans-serif;
   --font-body: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
@@ -60,6 +67,19 @@ body {
 }
 .wc-host { color: var(--muted); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; }
 
+.topbar-right { display: flex; align-items: center; gap: 16px; }
+
+.myteams-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--font-body); font-size: 13px; font-weight: 600;
+  color: var(--text); cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 999px; padding: 8px 14px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.myteams-btn:hover { border-color: var(--fav); background: #223a48; }
+.myteams-btn .mt-star { color: var(--fav); font-size: 14px; line-height: 1; }
+
 .status { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
 .status .dot {
   width: 9px; height: 9px; border-radius: 50%;
@@ -87,8 +107,12 @@ main { padding: 22px; max-width: 1400px; margin: 0 auto; }
   color: var(--text);
 }
 .band-sub { color: var(--muted); font-size: 12.5px; }
-.legend { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; }
-.legend-swatch { width: 12px; height: 12px; border-radius: 3px; background: var(--qualify); display: inline-block; }
+.legend { display: inline-flex; align-items: center; gap: 16px; margin-left: auto; flex-wrap: wrap; }
+.legend-item { display: inline-flex; align-items: center; gap: 7px; }
+.legend-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.sw-qualify { background: var(--qualify); }
+.sw-fav { background: var(--fav); }
+.sw-follow { background: var(--follow); }
 
 /* ---- today scorecards ------------------------------------------------- */
 .scorestrip {
@@ -113,6 +137,14 @@ main { padding: 22px; max-width: 1400px; margin: 0 auto; }
   gap: 10px;
 }
 .scorecard.is-live { border-color: rgba(255, 82, 82, 0.55); }
+/* a favorite/followed team playing today tints the whole card */
+.scorecard.follow-card { border-color: rgba(79, 195, 247, 0.5); background: linear-gradient(180deg, #1c3a48, var(--surface)); }
+.scorecard.fav-card {
+  border-color: var(--fav);
+  background: linear-gradient(180deg, #34301f, var(--surface));
+  box-shadow: 0 0 0 1px var(--fav-glow), 0 8px 24px -12px var(--fav-glow);
+}
+.sc-team .team-star { color: var(--fav); margin-right: 5px; font-size: 14px; }
 .sc-top { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; }
 .sc-group { color: var(--accent); font-family: var(--font-display); letter-spacing: 0.12em; text-transform: uppercase; }
 .sc-state { color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
@@ -176,6 +208,9 @@ table.table td.pts { font-weight: 700; }
 table.table tbody tr { border-bottom: 1px solid rgba(41, 65, 80, 0.5); }
 table.table tbody tr:last-child { border-bottom: none; }
 
+/* fixed-width star slot keeps the team column aligned across all rows */
+.star-slot { width: 14px; flex: none; text-align: center; color: var(--fav); font-size: 13px; line-height: 1; }
+
 /* the signature: qualification rail on the top two of every group */
 tr.qualify { background: var(--qualify-tint); box-shadow: inset 3px 0 0 var(--qualify); }
 .pos {
@@ -184,7 +219,17 @@ tr.qualify { background: var(--qualify-tint); box-shadow: inset 3px 0 0 var(--qu
   font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
   background: var(--line); color: var(--muted);
 }
+/* the green pill always marks an advancing team, even when the row is
+   recolored for a favorite/followed team — so both facts stay readable */
 tr.qualify .pos { background: var(--qualify); color: #06281a; }
+
+/* allegiance tiers override the row background; declared after .qualify so
+   following beats green and favorite beats both (equal specificity, source order) */
+tr.is-follow { background: var(--follow-tint); box-shadow: inset 3px 0 0 var(--follow); }
+tr.is-fav {
+  background: var(--fav-tint);
+  box-shadow: inset 3px 0 0 var(--fav), 0 0 0 1px var(--fav-glow);
+}
 
 /* ---- footer ----------------------------------------------------------- */
 .foot {
@@ -194,7 +239,66 @@ tr.qualify .pos { background: var(--qualify); color: #06281a; }
 }
 .empty { color: var(--muted); font-size: 13px; padding: 14px 2px; }
 
-/* ---- motion ----------------------------------------------------------- */
+/* ---- team picker ------------------------------------------------------ */
+.picker-backdrop {
+  position: fixed; inset: 0; background: rgba(6, 14, 20, 0.55);
+  z-index: 40; backdrop-filter: blur(2px);
+}
+.picker {
+  position: fixed; top: 74px; right: 22px; z-index: 50;
+  width: min(360px, calc(100vw - 28px));
+  max-height: min(70vh, 560px);
+  display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 14px; box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+}
+.picker-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px 10px;
+}
+.picker-head strong { font-family: var(--font-display); letter-spacing: 0.08em; text-transform: uppercase; font-size: 15px; }
+.picker-close {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: 24px; line-height: 1; padding: 0 4px;
+}
+.picker-close:hover { color: var(--text); }
+.picker-hint { margin: 0 16px 10px; color: var(--muted); font-size: 12px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+}
+.chip-fav { background: var(--fav-tint); color: var(--fav); }
+.chip-follow { background: var(--follow-tint); color: var(--follow); }
+.picker-search {
+  margin: 0 16px 10px; padding: 9px 12px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 9px;
+  color: var(--text); font-size: 14px; font-family: var(--font-body);
+}
+.picker-search:focus { outline: none; border-color: var(--fav); }
+.picker-list { overflow-y: auto; padding: 0 8px 10px; }
+.pick-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 8px; border-radius: 8px;
+}
+.pick-row:hover { background: var(--surface-2); }
+.pick-name { flex: 1; font-size: 14px; }
+.pick-row.fav .pick-name { color: var(--fav); font-weight: 600; }
+.pick-row.follow .pick-name { color: var(--follow); font-weight: 600; }
+.pick-btn {
+  cursor: pointer; border: 1px solid var(--line); background: transparent;
+  color: var(--muted); border-radius: 7px; padding: 5px 10px;
+  font-size: 12px; font-weight: 600; font-family: var(--font-body);
+  transition: all 0.12s;
+}
+.pick-star { font-size: 15px; width: 34px; text-align: center; padding: 5px 0; }
+.pick-star:hover { border-color: var(--fav); color: var(--fav); }
+.pick-row.fav .pick-star { background: var(--fav); border-color: var(--fav); color: #2a1c00; }
+.pick-follow:hover { border-color: var(--follow); color: var(--follow); }
+.pick-row.follow .pick-follow { background: var(--follow); border-color: var(--follow); color: #06222e; }
+.picker-empty { color: var(--muted); font-size: 13px; padding: 14px 12px; }
+
+
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(47,191,113,0.55); } 70% { box-shadow: 0 0 0 7px rgba(47,191,113,0); } 100% { box-shadow: 0 0 0 0 rgba(47,191,113,0); } }
 @keyframes pulse-red { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
@@ -207,4 +311,7 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   main { padding: 16px; }
   .scorecard { flex-basis: 84vw; }
   .groupgrid { grid-template-columns: 1fr; }
+  .picker { top: auto; bottom: 0; right: 0; left: 0; width: 100%; max-height: 80vh; border-radius: 16px 16px 0 0; }
+  .topbar-right { gap: 10px; }
+  .wc-host { display: none; }
 }

@@ -1,13 +1,17 @@
 """HTTP layer: one HTML page plus two JSON endpoints the page polls."""
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, render_template, current_app
+from flask import Blueprint, jsonify, render_template, current_app, request
 
 bp = Blueprint("main", __name__)
 
 
 def _service():
     return current_app.config["WC_SERVICE"]
+
+
+def _prefs():
+    return current_app.config["WC_PREFS"]
 
 
 @bp.route("/")
@@ -29,6 +33,21 @@ def api_today():
 @bp.route("/api/groups")
 def api_groups():
     return jsonify(_service().get_groups())
+
+
+@bp.route("/api/teams")
+def api_teams():
+    return jsonify({"teams": _service().get_teams()})
+
+
+@bp.route("/api/preferences", methods=["GET", "PUT"])
+def api_preferences():
+    store = _prefs()
+    if request.method == "GET":
+        return jsonify(store.load())
+    body = request.get_json(silent=True) or {}
+    saved = store.save(body.get("favorite"), body.get("following") or [])
+    return jsonify(saved)
 
 
 @bp.route("/api/health")

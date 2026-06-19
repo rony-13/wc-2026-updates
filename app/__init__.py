@@ -7,6 +7,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask
 
 from .config import Config
+from .preferences import PreferencesStore
 from .routes import bp
 from .service import WorldCupService
 
@@ -18,6 +19,7 @@ def create_app(config: Config | None = None, start_scheduler: bool = True) -> Fl
     service = WorldCupService(config)
     app.config["WC_SERVICE"] = service
     app.config["WC_CONFIG"] = config
+    app.config["WC_PREFS"] = PreferencesStore(config.CACHE_DIR)
     app.register_blueprint(bp)
 
     # Prime data once at startup so the first request is never empty.

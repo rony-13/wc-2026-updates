@@ -3,6 +3,26 @@
 const CFG = window.WC_CONFIG || { todayInterval: 30, groupsInterval: 60 };
 const $ = (sel) => document.querySelector(sel);
 
+// user preferences (favorite + following), loaded from the backend
+let prefs = { favorite: null, following: [] };
+let teams = [];
+let lastGroups = null;   // cache last payloads so we can re-render on pref change
+let lastToday = null;
+let followSet = new Set();
+
+function rebuildFollowSet() {
+  followSet = new Set((prefs.following || []).map((t) => t.casefold ? t.casefold() : t.toLowerCase()));
+}
+
+// returns 'fav' | 'follow' | null for a team name (case-insensitive)
+function classify(team) {
+  if (!team) return null;
+  const key = team.toLowerCase();
+  if (prefs.favorite && prefs.favorite.toLowerCase() === key) return "fav";
+  if (followSet.has(key)) return "follow";
+  return null;
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => (
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
@@ -40,10 +60,21 @@ function setStatus(meta, ok) {
 }
 
 /* ---- today scorecards ------------------------------------------------- */
+function teamLabel(name) {
+  const cls = classify(name);
+  const star = cls === "fav" ? '<span class="team-star">★</span>' : "";
+  return `${star}${escapeHtml(name)}`;
+}
+
 function scorecard(m) {
   const live = m.is_live;
   const finished = m.status === "FINISHED";
-  const cls = live ? "is-live" : finished ? "ft" : "sched";
+  let cls = live ? "is-live" : finished ? "ft" : "sched";
+  // a favorite/followed team playing today tints the whole card (favorite wins)
+  const tier = classify(m.home) === "fav" || classify(m.away) === "fav" ? "fav-card"
+    : classify(m.home) === "follow" || classify(m.away) === "follow" ? "follow-card"
+    : "";
+  if (tier) cls += " " + tier;
   let state;
   if (live) state = `<span class="sc-state live">${m.minute ? m.minute + "'" : "LIVE"}</span>`;
   else if (finished) state = `<span class="sc-state ft">Full time</span>`;
@@ -56,8 +87,8 @@ function scorecard(m) {
   return `
     <div class="scorecard ${cls}" role="listitem">
       <div class="sc-top"><span class="sc-group">${group}</span>${state}</div>
-      <div class="sc-row"><span class="sc-team">${escapeHtml(m.home)}</span><span class="sc-score">${hs}</span></div>
-      <div class="sc-row"><span class="sc-team">${escapeHtml(m.away)}</span><span class="sc-score">${as}</span></div>
+      <div class="sc-row"><span class="sc-team">${teamLabel(m.home)}</span><span class="sc-score">${hs}</span></div>
+      <div class="sc-row"><span class="sc-team">${teamLabel(m.away)}</span><span class="sc-score">${as}</span></div>
       ${m.venue ? `<div class="sc-venue">${escapeHtml(m.venue)}</div>` : ""}
     </div>`;
 }
@@ -67,14 +98,10 @@ async function loadToday() {
     const res = await fetch("/api/today", { cache: "no-store" });
     const data = await res.json();
     setStatus(data, true);
+    lastToday = data;
     $("#today-date").textContent = new Date(data.date + "T00:00:00")
       .toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-    const host = $("#today");
-    if (!data.matches.length) {
-      host.innerHTML = `<p class="empty">No matches scheduled for today.</p>`;
-    } else {
-      host.innerHTML = data.matches.map(scorecard).join("");
-    }
+    renderToday();
   } catch (e) {
     setStatus(null, false);
   }
@@ -82,14 +109,20 @@ async function loadToday() {
 
 /* ---- group tables ----------------------------------------------------- */
 function groupCard(g) {
-  const rows = g.rows.map((r) => `
-    <tr class="${r.qualifies ? "qualify" : ""}">
-      <td class="team-col"><span class="pos">${r.rank}</span>${escapeHtml(r.team)}</td>
+  const rows = g.rows.map((r) => {
+    const tier = classify(r.team);          // 'fav' | 'follow' | null
+    const cls = [r.qualifies ? "qualify" : "", tier === "fav" ? "is-fav" : tier === "follow" ? "is-follow" : ""]
+      .filter(Boolean).join(" ");
+    const star = tier === "fav" ? "★" : "";
+    return `
+    <tr class="${cls}">
+      <td class="team-col"><span class="star-slot">${star}</span><span class="pos">${r.rank}</span>${escapeHtml(r.team)}</td>
       <td>${r.played}</td>
       <td>${r.won}-${r.draw}-${r.lost}</td>
       <td>${r.goal_difference > 0 ? "+" : ""}${r.goal_difference}</td>
       <td class="pts">${r.points}</td>
-    </tr>`).join("");
+    </tr>`;
+  }).join("");
   return `
     <div class="groupcard">
       <div class="gc-head">${escapeHtml(g.group)}</div>
@@ -102,26 +135,161 @@ function groupCard(g) {
     </div>`;
 }
 
+function renderToday() {
+  if (!lastToday) return;
+  const host = $("#today");
+  if (!lastToday.matches.length) {
+    host.innerHTML = `<p class="empty">No matches scheduled for today.</p>`;
+  } else {
+    host.innerHTML = lastToday.matches.map(scorecard).join("");
+  }
+}
+
+function renderGroups() {
+  if (!lastGroups) return;
+  $("#groups").innerHTML = lastGroups.groups.map(groupCard).join("");
+}
+
 async function loadGroups() {
   try {
     const res = await fetch("/api/groups", { cache: "no-store" });
     const data = await res.json();
     setStatus(data, true);
-    $("#groups").innerHTML = data.groups.map(groupCard).join("");
+    lastGroups = data;
+    renderGroups();
   } catch (e) {
     setStatus(null, false);
   }
 }
 
+/* ---- preferences + team picker ---------------------------------------- */
+async function loadPreferences() {
+  try {
+    const res = await fetch("/api/preferences", { cache: "no-store" });
+    prefs = await res.json();
+  } catch (e) {
+    prefs = { favorite: null, following: [] };
+  }
+  rebuildFollowSet();
+}
+
+async function loadTeams() {
+  try {
+    const res = await fetch("/api/teams", { cache: "no-store" });
+    teams = (await res.json()).teams || [];
+  } catch (e) {
+    teams = [];
+  }
+}
+
+async function savePreferences() {
+  rebuildFollowSet();
+  // re-render immediately for a snappy feel; the PUT persists in the background
+  renderToday();
+  renderGroups();
+  renderPicker();
+  try {
+    const res = await fetch("/api/preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(prefs),
+    });
+    prefs = await res.json();   // adopt the server-normalized version
+    rebuildFollowSet();
+  } catch (e) { /* keep optimistic local state */ }
+}
+
+function setFavorite(team) {
+  prefs.favorite = (prefs.favorite === team) ? null : team;
+  if (prefs.favorite) {
+    // a team can't be both favorite and followed
+    prefs.following = (prefs.following || []).filter(
+      (t) => t.toLowerCase() !== team.toLowerCase()
+    );
+  }
+  savePreferences();
+}
+
+function toggleFollow(team) {
+  const key = team.toLowerCase();
+  if (prefs.favorite && prefs.favorite.toLowerCase() === key) {
+    prefs.favorite = null;   // move favorite -> following
+  }
+  const exists = (prefs.following || []).some((t) => t.toLowerCase() === key);
+  prefs.following = exists
+    ? prefs.following.filter((t) => t.toLowerCase() !== key)
+    : [...(prefs.following || []), team];
+  savePreferences();
+}
+
+function renderPicker() {
+  const list = $("#picker-list");
+  if (!list) return;
+  const q = ($("#picker-search").value || "").toLowerCase().trim();
+  const shown = teams.filter((t) => t.toLowerCase().includes(q));
+  if (!shown.length) {
+    list.innerHTML = `<p class="picker-empty">No teams match “${escapeHtml(q)}”.</p>`;
+    return;
+  }
+  list.innerHTML = shown.map((t) => {
+    const tier = classify(t);
+    const rowCls = tier === "fav" ? "fav" : tier === "follow" ? "follow" : "";
+    const starTitle = tier === "fav" ? "Remove favorite" : "Set as favorite";
+    const followLabel = tier === "follow" ? "Following" : "Follow";
+    return `
+      <div class="pick-row ${rowCls}" data-team="${escapeHtml(t)}">
+        <button type="button" class="pick-btn pick-star" data-act="fav" title="${starTitle}" aria-label="${starTitle}">★</button>
+        <span class="pick-name">${escapeHtml(t)}</span>
+        <button type="button" class="pick-btn pick-follow" data-act="follow">${followLabel}</button>
+      </div>`;
+  }).join("");
+}
+
+function openPicker() {
+  $("#picker").hidden = false;
+  $("#picker-backdrop").hidden = false;
+  $("#myteams-btn").setAttribute("aria-expanded", "true");
+  renderPicker();
+  $("#picker-search").focus();
+}
+
+function closePicker() {
+  $("#picker").hidden = true;
+  $("#picker-backdrop").hidden = true;
+  $("#myteams-btn").setAttribute("aria-expanded", "false");
+}
+
+function wirePicker() {
+  $("#myteams-btn").addEventListener("click", () =>
+    $("#picker").hidden ? openPicker() : closePicker()
+  );
+  $("#picker-close").addEventListener("click", closePicker);
+  $("#picker-backdrop").addEventListener("click", closePicker);
+  $("#picker-search").addEventListener("input", renderPicker);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("#picker").hidden) closePicker();
+  });
+  // event delegation for the per-team buttons
+  $("#picker-list").addEventListener("click", (e) => {
+    const btn = e.target.closest(".pick-btn");
+    if (!btn) return;
+    const team = btn.closest(".pick-row").dataset.team;
+    if (btn.dataset.act === "fav") setFavorite(team);
+    else toggleFollow(team);
+  });
+}
+
+/* ---- startup ---------------------------------------------------------- */
 function start(fn, seconds) {
   fn();
   setInterval(fn, seconds * 1000);
 }
 
-start(loadToday, CFG.todayInterval);
-start(loadGroups, CFG.groupsInterval);
-// keep the "updated Ns ago" label honest between polls
-setInterval(() => {
-  const t = $("#status-text");
-  if (t && t.dataset) { /* refreshed on next poll */ }
-}, 1000);
+(async function init() {
+  await Promise.all([loadPreferences(), loadTeams()]);
+  wirePicker();
+  start(loadToday, CFG.todayInterval);
+  start(loadGroups, CFG.groupsInterval);
+  // refresh the team list periodically so it fills in once live data arrives
+  setInterval(loadTeams, 5 * 60 * 1000);
+})();

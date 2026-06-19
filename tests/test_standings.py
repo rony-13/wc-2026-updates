@@ -61,6 +61,21 @@ def test_knockout_matches_excluded():
     assert compute_standings([ko]) == {}
 
 
+def test_preferences_normalization(tmp_path=None):
+    import tempfile
+    from app.preferences import PreferencesStore
+    d = tempfile.mkdtemp()
+    store = PreferencesStore(d)
+    # favorite is removed from following; blanks and dupes dropped
+    saved = store.save("Mexico", ["Brazil", "brazil", "Mexico", "  ", "Spain"])
+    assert saved["favorite"] == "Mexico"
+    assert saved["following"] == ["Brazil", "Spain"]
+    # round-trips from disk
+    assert store.load() == saved
+    # clearing the favorite works
+    assert store.save(None, ["Brazil"])["favorite"] is None
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

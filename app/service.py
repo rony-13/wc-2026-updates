@@ -101,6 +101,16 @@ class WorldCupService:
             "matches": [self._match_view(m) for m in todays],
         }
 
+    def get_teams(self) -> List[str]:
+        """Sorted unique nation names from the group stage (no '2A' placeholders)."""
+        matches, _, _ = self._snapshot()
+        names = set()
+        for m in matches:
+            if m.group:  # group-stage matches have real nation names
+                names.add(m.home)
+                names.add(m.away)
+        return sorted(names)
+
     def get_groups(self) -> dict:
         matches, source, updated_at = self._snapshot()
         tables = compute_standings(matches)

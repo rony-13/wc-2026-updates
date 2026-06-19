@@ -13,11 +13,30 @@
       <span class="wc-title">World Cup 2026</span>
       <span class="wc-host">USA · Canada · Mexico</span>
     </div>
-    <div class="status" id="status" aria-live="polite">
-      <span class="dot" id="status-dot"></span>
-      <span id="status-text">Connecting…</span>
+    <div class="topbar-right">
+      <button type="button" class="myteams-btn" id="myteams-btn" aria-haspopup="dialog" aria-expanded="false">
+        <span class="mt-star">★</span> My Teams
+      </button>
+      <div class="status" id="status" aria-live="polite">
+        <span class="dot" id="status-dot"></span>
+        <span id="status-text">Connecting…</span>
+      </div>
     </div>
   </header>
+
+  <div class="picker-backdrop" id="picker-backdrop" hidden></div>
+  <aside class="picker" id="picker" role="dialog" aria-label="Choose your teams" aria-modal="true" hidden>
+    <div class="picker-head">
+      <strong>My Teams</strong>
+      <button type="button" class="picker-close" id="picker-close" aria-label="Close">×</button>
+    </div>
+    <p class="picker-hint">
+      <span class="chip chip-fav">★ Favorite</span> one team ·
+      <span class="chip chip-follow">Following</span> as many as you like
+    </p>
+    <input type="search" id="picker-search" class="picker-search" placeholder="Search teams…" autocomplete="off" />
+    <div class="picker-list" id="picker-list"></div>
+  </aside>
 
   <main>
     <section class="band" aria-labelledby="today-h">
@@ -34,7 +53,9 @@
       <div class="band-head">
         <h2 id="groups-h">Groups</h2>
         <span class="band-sub legend">
-          <span class="legend-swatch"></span> Top two advance
+          <span class="legend-item"><span class="legend-swatch sw-qualify"></span> Top two advance</span>
+          <span class="legend-item"><span class="legend-swatch sw-fav"></span> Favorite</span>
+          <span class="legend-item"><span class="legend-swatch sw-follow"></span> Following</span>
         </span>
       </div>
       <div class="groupgrid" id="groups"></div>
