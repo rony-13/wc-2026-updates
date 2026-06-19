@@ -238,6 +238,13 @@ Issues and pull requests welcome — adding a new data provider is a great first
 contribution (drop a file in `app/providers/` returning `Match[]` and add it to
 the chain in `app/providers/__init__.py`).
 
+## Author
+
+Developed by **Md Rashedul Amin**.
+
+- GitHub — <https://github.com/rony-13>
+- Website — <https://bold.pro/my/rashedul>
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
