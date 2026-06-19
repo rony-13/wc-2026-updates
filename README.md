@@ -37,7 +37,7 @@ an upstream rate limit.
 ## Quickstart (any platform)
 
 ```bash
-git clone <your-fork-url> worldcup-2026-dashboard
+git clone https://github.com/rony-13/wc-2026-updates.git
 cd worldcup-2026-dashboard
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
