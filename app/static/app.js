@@ -40,23 +40,42 @@ function fmtUpdated(iso) {
 }
 
 // football-data.org is live; openfootball / seed are slower or offline.
+function liveBadge(word, color) {
+  return `<strong style="color:${color};font-weight:700;letter-spacing:.05em;">${word}</strong>`;
+}
+
+// worldcup26.ir / football-data.org = live; openfootball = not live; seed = offline cache.
 function setStatus(meta, ok) {
   const el = $("#status");
+  const dot = $("#status-dot");
   const text = $("#status-text");
-  const live = meta && meta.source === "football-data.org";
-  el.classList.remove("live", "offline", "error");
-  if (!ok) {
-    el.classList.add("error");
-    text.textContent = "Reconnecting…";
+  el.classList.remove("live");  // .live drives the green pulsing dot in style.css
+
+  // Our own backend was unreachable (server not running / network blip).
+  if (!ok || !meta) {
+    dot.style.background = "var(--live)";          // red
+    text.innerHTML = `${liveBadge("OFFLINE", "var(--live)")} · reconnecting…`;
     return;
   }
-  if (live) el.classList.add("live");
-  else if (meta.source === "seed") el.classList.add("offline");
-  const label = meta.source === "seed" ? "Offline snapshot"
-    : meta.source === "openfootball" ? "openfootball (~daily)"
-    : "Live · football-data.org";
-  text.textContent = `${label} · updated ${fmtUpdated(meta.updated_at)}`;
-  $("#foot-source").textContent = `Source: ${meta.source}`;
+
+  const src = meta.source;
+  const isLive = src === "worldcup26.ir" || src === "football-data.org";
+  const when = `updated ${fmtUpdated(meta.updated_at)}`;
+
+  if (isLive) {
+    el.classList.add("live");                      // green + pulse (from style.css)
+    dot.style.background = "";                      // let the .live class color the dot
+    text.innerHTML = `${liveBadge("LIVE", "var(--qualify)")} · ${escapeHtml(src)} · ${when}`;
+  } else if (src === "seed") {
+    dot.style.background = "var(--muted)";          // grey
+    text.innerHTML = `${liveBadge("OFFLINE", "var(--muted)")} · cached snapshot · ${when}`;
+  } else {
+    // openfootball (or any other non-live source): valid data, just not live.
+    dot.style.background = "var(--accent)";         // amber
+    const name = src === "openfootball" ? "openfootball (~daily)" : escapeHtml(src);
+    text.innerHTML = `${liveBadge("NOT LIVE", "var(--accent)")} · ${name} · ${when}`;
+  }
+  $("#foot-source").textContent = `Source: ${escapeHtml(src)}`;
 }
 
 /* ---- today scorecards ------------------------------------------------- */

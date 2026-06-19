@@ -253,6 +253,7 @@ tr.is-fav {
   border-radius: 14px; box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
   overflow: hidden;
 }
+.picker[hidden], .picker-backdrop[hidden] { display: none; }
 .picker-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 16px 10px;

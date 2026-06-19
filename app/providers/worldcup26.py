@@ -1,0 +1,134 @@
+"""worldcup26.ir provider — free, no API key, real-time live scores.
+
+Source: https://worldcup26.ir  (repo: github.com/rezarahiminia/worldcup2026)
+A community, open-source API built specifically for the 2026 World Cup that
+updates match scores and status live during the tournament. Read access needs
+no key, so this is the zero-cost way to get true in-match scores — unlike the
+football-data.org *free* tier, whose scores are delayed, not live.
+
+We only call /get/games (it carries English team names, the group letter, the
+running score, a `finished` flag and `time_elapsed`), and compute standings
+locally as usual.
+
+Caveat: the feed's `local_date` has no timezone, so kickoff *clock* times for
+not-yet-started matches are interpreted with a fixed offset (US Eastern by
+default, override with WC26_TZ_OFFSET). This affects only the displayed kickoff
+time and the "today" boundary at the margins — never live scores or standings.
+Live matches are always shown regardless of date.
+"""
+from __future__ import annotations
+
+import os
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
+
+import requests
+
+from ..models import Match, SCHEDULED, LIVE, FINISHED
+from .base import BaseProvider, ProviderError
+
+GAMES_URL = "https://worldcup26.ir/get/games"
+
+_GROUP_LETTERS = set("ABCDEFGHIJKL")
+_KNOCKOUT_STAGE = {
+    "R32": "LAST_32", "R16": "LAST_16", "QF": "LAST_8",
+    "SF": "LAST_4", "TP": "THIRD_PLACE", "3P": "THIRD_PLACE", "F": "FINAL",
+}
+_NOT_STARTED = {"", "notstarted", "not_started", "ns", "scheduled", "upcoming", "tbd"}
+
+
+def _to_int(value) -> Optional[int]:
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _status(finished: str, time_elapsed: str) -> str:
+    if str(finished).strip().upper() == "TRUE":
+        return FINISHED
+    if str(time_elapsed).strip().lower() in _NOT_STARTED:
+        return SCHEDULED
+    return LIVE
+
+
+def _minute(time_elapsed: str) -> Optional[int]:
+    digits = "".join(ch for ch in str(time_elapsed) if ch.isdigit())
+    return int(digits) if digits else None
+
+
+def _kickoff_iso(local_date: str, offset_hours: int) -> str:
+    # "06/11/2026 13:00" with no tz -> apply the assumed offset, return UTC ISO
+    try:
+        naive = datetime.strptime(local_date.strip(), "%m/%d/%Y %H:%M")
+        tz = timezone(timedelta(hours=offset_hours))
+        return naive.replace(tzinfo=tz).astimezone(timezone.utc).isoformat()
+    except (ValueError, AttributeError):
+        return datetime.now(timezone.utc).isoformat()
+
+
+class WorldCup26Provider(BaseProvider):
+    name = "worldcup26.ir"
+    min_interval_seconds = 15  # real-time source; poll briskly but politely
+
+    def __init__(self, timeout: int = 15, tz_offset: Optional[int] = None):
+        self.timeout = timeout
+        if tz_offset is None:
+            try:
+                tz_offset = int(os.environ.get("WC26_TZ_OFFSET", "-4"))
+            except ValueError:
+                tz_offset = -4
+        self.tz_offset = tz_offset
+
+    def fetch_matches(self) -> List[Match]:
+        try:
+            resp = requests.get(
+                GAMES_URL,
+                headers={"Accept": "application/json"},
+                timeout=self.timeout,
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise ProviderError(f"worldcup26.ir fetch failed: {exc}") from exc
+
+        games = payload.get("games")
+        if not isinstance(games, list) or not games:
+            raise ProviderError("worldcup26.ir returned no games")
+
+        matches: List[Match] = []
+        for g in games:
+            group_raw = str(g.get("group", "")).strip().upper()
+            is_group = (str(g.get("type", "")).lower() == "group") or (group_raw in _GROUP_LETTERS)
+            group = f"Group {group_raw}" if (is_group and group_raw in _GROUP_LETTERS) else None
+            stage = "GROUP_STAGE" if group else _KNOCKOUT_STAGE.get(group_raw, "KNOCKOUT")
+
+            home = (g.get("home_team_name_en") or "").strip() or "TBD"
+            away = (g.get("away_team_name_en") or "").strip() or "TBD"
+
+            # Schema-drift guard: a real group game must carry team names.
+            if is_group and (home == "TBD" or away == "TBD"):
+                raise ProviderError("worldcup26.ir schema mismatch (missing team names)")
+
+            status = _status(g.get("finished", "FALSE"), g.get("time_elapsed", ""))
+            if status == SCHEDULED:
+                home_score = away_score = None  # ignore 0–0 placeholders before kickoff
+            else:
+                home_score = _to_int(g.get("home_score"))
+                away_score = _to_int(g.get("away_score"))
+
+            matches.append(
+                Match(
+                    id=str(g.get("id", "")),
+                    group=group,
+                    stage=stage,
+                    utc_date=_kickoff_iso(g.get("local_date", ""), self.tz_offset),
+                    status=status,
+                    home=home,
+                    away=away,
+                    home_score=home_score,
+                    away_score=away_score,
+                    minute=_minute(g.get("time_elapsed", "")) if status == LIVE else None,
+                )
+            )
+        return matches

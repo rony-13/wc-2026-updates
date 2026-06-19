@@ -133,7 +133,7 @@ environment and never writes it to logs or the CSV cache. To get a free key
 
 ```
             ┌─────────────── providers (fallback chain) ───────────────┐
-            │  football-data.org (keyed)  →  openfootball (no key)      │
+            │  worldcup26.ir → football-data.org → openfootball         │
             └───────────────────────────┬──────────────────────────────┘
                                          │ normalized Match[]
                           ┌──────────────▼──────────────┐
@@ -146,8 +146,10 @@ environment and never writes it to logs or the CSV cache. To get a free key
    (30s / 60s)         └────────────────────────────────────┘
 ```
 
-- **Providers** (`app/providers/`) each return a normalized `Match` list, so
-  adding a new source is one small file.
+- **Providers** (`app/providers/`) each return a normalized `Match` list. They
+  are tried in order — **worldcup26.ir** (free, no key, real-time live scores),
+  then **football-data.org** if a key is set, then **openfootball** (free,
+  ~daily) as the always-available fallback. Adding a source is one small file.
 - **Standings** (`app/standings.py`) are computed from matches: 3/1/0 points,
   ordered by points → goal difference → goals for → name, top two flagged.
 - **Store** (`app/store.py`) persists matches to CSV and falls back to the
@@ -167,6 +169,22 @@ environment and never writes it to logs or the CSV cache. To get a free key
 | `GET /api/teams` | The 48 nations, for the team picker. |
 | `GET` / `PUT /api/preferences` | Read / save your favorite + followed teams. |
 | `GET /api/health` | Source and last-updated timestamp. |
+
+### Live data indicator
+
+The status pill in the top-right corner always shows which data you're seeing
+and how fresh it is, so a live score is never mistaken for a stale one:
+
+| Indicator | Meaning |
+|---|---|
+| 🟢 **LIVE** · worldcup26.ir | Real-time data — scores and the match clock update live during games. |
+| 🟡 **NOT LIVE** · openfootball (~daily) | The free fallback source — results are accurate but refreshed only about once a day. |
+| 🔴 **OFFLINE** · reconnecting… | The page can't reach its own backend (the server stopped, or a network blip). |
+
+The dashboard always prefers the live source and **falls back automatically** to
+openfootball if it's unavailable — when that happens the pill turns amber, so
+you always know when you're on non-live data. The footer's "Source:" line shows
+the same thing.
 
 ---
 
@@ -224,13 +242,17 @@ the displayed order may differ from the official table.
 
 ## Data sources & attribution
 
+- **worldcup26.ir** — free, open-source, no key required; real-time live scores
+  during the tournament. <https://worldcup26.ir>
+  (repo: <https://github.com/rezarahiminia/worldcup2026>)
 - **openfootball / worldcup.json** — public domain (CC0).
   <https://github.com/openfootball/worldcup.json>
-- **football-data.org** — optional, free tier with registration.
+- **football-data.org** — optional, free tier with registration. Note its free
+  tier provides *delayed* scores; live scores require a paid plan.
   <https://www.football-data.org>
 
-This project is not affiliated with or endorsed by FIFA, football-data.org, or
-openfootball.
+This project is not affiliated with or endorsed by FIFA, worldcup26.ir,
+football-data.org, or openfootball.
 
 ## Contributing
 
