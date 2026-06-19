@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=World Cup 2026 Dashboard
+Comment=Live FIFA World Cup 2026 dashboard — opens at login and stays running
+Exec=__PYTHON__ __WORKDIR__/run.py
+Path=__WORKDIR__
+Terminal=false
+X-GNOME-Autostart-enabled=true
+Categories=Network;Sports;

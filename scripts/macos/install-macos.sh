@@ -3,10 +3,10 @@
 # login and stays running. Re-running this is safe (it reloads the agent).
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LABEL="com.worldcup.dashboard"
 PLIST_DST="$HOME/Library/LaunchAgents/${LABEL}.plist"
-TEMPLATE="$REPO_DIR/scripts/${LABEL}.plist.template"
+TEMPLATE="$REPO_DIR/scripts/macos/${LABEL}.plist.template"
 
 echo "==> Repo: $REPO_DIR"
 
@@ -42,4 +42,4 @@ PORT="${PORT:-8765}"
 echo ""
 echo "Dashboard will be available at: http://127.0.0.1:${PORT}/"
 echo "It is starting now and your browser should open shortly."
-echo "To stop it from running at login: scripts/uninstall-macos.sh"
+echo "To stop it from running at login: scripts/macos/uninstall-macos.sh"

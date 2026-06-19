@@ -1,7 +1,8 @@
 # World Cup 2026 — Live Dashboard
 
-A tiny, self-contained **macOS desktop dashboard** for the FIFA World Cup 2026
-(USA · Canada · Mexico). It launches at login and stays running, showing:
+A tiny, self-contained **desktop dashboard** for the FIFA World Cup 2026
+(USA · Canada · Mexico). It launches at login on **macOS, Windows, and Linux**
+and stays open, showing:
 
 - **Today's matches** across the top as live scorecards — like the score bug on
   a broadcast — refreshing every **30 seconds**.
@@ -31,7 +32,7 @@ zero cost**.
 | No database | Normalized matches live in memory; standings are computed on the fly. |
 | Offline loading | Every successful fetch is written to `data/cache/*.csv`; a committed public-domain seed in `data/seed/` means it shows real fixtures on first run even with no network. |
 | Secrets safe | API keys come only from a git-ignored `.env`. Nothing secret is ever committed, logged, or printed. |
-| Starts at login | A macOS **LaunchAgent** runs it at login and keeps it alive. |
+| Starts at login | One-command installers for **macOS** (LaunchAgent), **Windows** (Startup launcher), and **Linux** (XDG autostart) start it at login and keep it open. |
 
 The backend polls the upstream source on a gentle schedule and **caches**; the
 frontend polls only the *local* backend (every 30s / 60s) and always gets cached
@@ -53,23 +54,49 @@ python run.py
 Then open <http://127.0.0.1:8765/> (it also opens automatically). That's it —
 it runs fully free on the no-key data source.
 
-## Install on macOS (start at login, stay running)
+## Start at login (keep it open when your PC starts)
+
+Installers live under `scripts/<your-os>/`. Each one creates a virtual
+environment, installs dependencies, writes a `.env` from the template, registers
+the app to launch at login, and starts it right away. All three need
+**Python 3.9+** on your PATH.
+
+### macOS
 
 ```bash
-./scripts/install-macos.sh
+./scripts/macos/install-macos.sh      # set up + start at login
+./scripts/macos/uninstall-macos.sh    # remove from login
 ```
 
-This creates a virtual environment, installs dependencies, writes a `.env` from
-the template, and registers a LaunchAgent at
+Registers a LaunchAgent at
 `~/Library/LaunchAgents/com.worldcup.dashboard.plist` with `RunAtLoad` +
-`KeepAlive`. The dashboard will now start every time you log in and reopen in
-your browser.
+`KeepAlive`, so it restarts automatically if it ever stops.
 
-To remove it:
+### Windows
+
+Double-click `scripts\windows\install-windows.bat`, or run from PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\windows\install-windows.ps1
+```
+
+Drops a hidden launcher (`WorldCup2026Dashboard.vbs`) in your Startup folder that
+runs the server with `pythonw` — no console window, just the dashboard in your
+browser. Remove it with `scripts\windows\uninstall-windows.ps1` (or the `.bat`).
+
+### Linux (GNOME, KDE, XFCE, …)
 
 ```bash
-./scripts/uninstall-macos.sh
+./scripts/linux/install-linux.sh      # set up + start at login
+./scripts/linux/uninstall-linux.sh    # remove from login
 ```
+
+Writes an XDG autostart entry to
+`~/.config/autostart/worldcup-dashboard.desktop`, the standard "run at desktop
+login" mechanism.
+
+> On every platform the dashboard opens in your default browser at
+> <http://127.0.0.1:8765/> and the server keeps running in the background.
 
 ---
 
