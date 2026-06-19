@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>World Cup 2026 — Live Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="wordmark">
+      <span class="wc-kicker">FIFA</span>
+      <span class="wc-title">World Cup 2026</span>
+      <span class="wc-host">USA · Canada · Mexico</span>
+    </div>
+    <div class="status" id="status" aria-live="polite">
+      <span class="dot" id="status-dot"></span>
+      <span id="status-text">Connecting…</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="band" aria-labelledby="today-h">
+      <div class="band-head">
+        <h2 id="today-h">Today</h2>
+        <span class="band-sub" id="today-date"></span>
+      </div>
+      <div class="scorestrip" id="today" role="list">
+        <p class="empty" id="today-empty">No matches scheduled for today.</p>
+      </div>
+    </section>
+
+    <section class="band" aria-labelledby="groups-h">
+      <div class="band-head">
+        <h2 id="groups-h">Groups</h2>
+        <span class="band-sub legend">
+          <span class="legend-swatch"></span> Top two advance
+        </span>
+      </div>
+      <div class="groupgrid" id="groups"></div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>Live group tables computed from match results.</span>
+    <span id="foot-source"></span>
+  </footer>
+
+  <script>
+    window.WC_CONFIG = {
+      todayInterval: {{ today_interval }},
+      groupsInterval: {{ groups_interval }}
+    };
+  </script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
