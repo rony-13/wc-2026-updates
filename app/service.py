@@ -15,6 +15,7 @@ Refresh strategy:
 from __future__ import annotations
 
 import threading
+import time
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Tuple
 from zoneinfo import ZoneInfo
@@ -32,6 +33,7 @@ IDLE_POLL_SECONDS = 300       # how often to poll when nothing is in progress (5
 LIVE_FAIL_GRACE_SECONDS = 60  # keep retrying worldcup26.ir this long before falling back
 MATCH_WINDOW_MINUTES = 130    # a kickoff keeps us in "live" mode this many minutes
 PRE_KICKOFF_MINUTES = 2       # start live polling slightly before kickoff
+ENRICH_MIN_INTERVAL_SECONDS = 1800  # how often to retry filling gaps from a fallback
 
 
 class WorldCupService:
@@ -51,6 +53,7 @@ class WorldCupService:
         self._live_realtime_ok = False  # got worldcup26.ir data during this live window
         self._wc_fail_since: Optional[float] = None  # when worldcup26.ir began failing
         self._was_live = False
+        self._last_enrich_attempt = 0.0
         self._wc = next((p for p in self.providers if p.name == WORLDCUP26), None)
         self._fallbacks = [p for p in self.providers if p.name != WORLDCUP26]
 
@@ -99,6 +102,9 @@ class WorldCupService:
             ok = self._refresh_live(now)
         else:
             ok = self._refresh_idle(now)
+
+        if self._source == WORLDCUP26:
+            self._enrich_missing_fields()
 
         if not self._matches:
             self._bootstrap()
@@ -186,6 +192,49 @@ class WorldCupService:
         return True
 
     # -- refresh helpers ---------------------------------------------------
+    def _enrich_missing_fields(self) -> None:
+        """worldcup26.ir stays authoritative for everything it provides
+        (scores, status, live updates) -- this never touches those. It only
+        fills in fields worldcup26.ir's feed structurally lacks (currently
+        just `venue`, which the live feed only gives as an opaque ID with no
+        name lookup of its own) by checking a fallback source for that one
+        field. If a fallback doesn't have it either, it's simply left blank
+        -- this is optional polish, never required for the dashboard to work.
+
+        Rate-limited (ENRICH_MIN_INTERVAL_SECONDS) since venues essentially
+        never change and there's no reason to poll a fallback every cycle
+        just for this.
+        """
+        with self._lock:
+            matches = list(self._matches)
+        missing = [m for m in matches if m.group and not m.venue]
+        if not missing:
+            return  # nothing to enrich
+
+        now = time.time()
+        if now - self._last_enrich_attempt < ENRICH_MIN_INTERVAL_SECONDS:
+            return  # back off -- already tried recently
+        self._last_enrich_attempt = now
+
+        for p in self._fallbacks:
+            still_missing = [m for m in missing if not m.venue]
+            if not still_missing:
+                break
+            try:
+                fallback_matches = p.fetch_matches()
+            except ProviderError:
+                continue  # this fallback is unavailable right now -- try the next, or skip
+            lookup = {
+                tuple(sorted((fm.home.lower(), fm.away.lower()))): fm.venue
+                for fm in fallback_matches
+                if fm.venue
+            }
+            for m in still_missing:
+                key = tuple(sorted((m.home.lower(), m.away.lower())))
+                venue = lookup.get(key)
+                if venue:
+                    m.venue = venue  # mutates the same Match objects in self._matches
+
     def _commit(self, matches: List[Match], source: str, errors: dict) -> None:
         self.store.save(matches, source)
         with self._lock:
