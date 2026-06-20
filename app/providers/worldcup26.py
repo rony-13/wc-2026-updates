@@ -19,6 +19,7 @@ Live matches are always shown regardless of date.
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
@@ -71,7 +72,7 @@ class WorldCup26Provider(BaseProvider):
     name = "worldcup26.ir"
     min_interval_seconds = 15  # real-time source; poll briskly but politely
 
-    def __init__(self, timeout: int = 15, tz_offset: Optional[int] = None):
+    def __init__(self, timeout: int = 20, tz_offset: Optional[int] = None):
         self.timeout = timeout
         if tz_offset is None:
             try:
@@ -80,23 +81,43 @@ class WorldCup26Provider(BaseProvider):
                 tz_offset = -4
         self.tz_offset = tz_offset
 
-    def fetch_matches(self) -> List[Match]:
-        try:
-            resp = requests.get(
-                GAMES_URL,
-                headers={"Accept": "application/json"},
-                timeout=self.timeout,
-            )
-            resp.raise_for_status()
-            payload = resp.json()
-        except (requests.RequestException, ValueError) as exc:
-            raise ProviderError(f"worldcup26.ir fetch failed: {exc}") from exc
+    def _get_payload(self) -> dict:
+        """GET the games feed, retrying once — the free API can be slow under
+        heavy load during live matches, and a single timeout shouldn\'t drop us
+        to the non-live fallback."""
+        last_exc = None
+        for attempt in range(2):
+            try:
+                resp = requests.get(
+                    GAMES_URL,
+                    headers={
+                        "Accept": "application/json",
+                        # default python-requests UA is frequently blocked (403) by
+                        # WAFs/rate-limiters; present a browser-like UA instead.
+                        "User-Agent": (
+                            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/125.0.0.0 Safari/537.36"
+                        ),
+                    },
+                    timeout=self.timeout,
+                )
+                resp.raise_for_status()
+                return resp.json()
+            except (requests.RequestException, ValueError) as exc:
+                last_exc = exc
+                if attempt == 0:
+                    time.sleep(1.0)
+        raise ProviderError(f"worldcup26.ir fetch failed after retry: {last_exc}")
 
+    def fetch_matches(self) -> List[Match]:
+        payload = self._get_payload()
         games = payload.get("games")
         if not isinstance(games, list) or not games:
             raise ProviderError("worldcup26.ir returned no games")
 
         matches: List[Match] = []
+        skipped = 0
         for g in games:
             group_raw = str(g.get("group", "")).strip().upper()
             is_group = (str(g.get("type", "")).lower() == "group") or (group_raw in _GROUP_LETTERS)
@@ -106,9 +127,12 @@ class WorldCup26Provider(BaseProvider):
             home = (g.get("home_team_name_en") or "").strip() or "TBD"
             away = (g.get("away_team_name_en") or "").strip() or "TBD"
 
-            # Schema-drift guard: a real group game must carry team names.
+            # A real group game must carry team names. Skip a malformed record
+            # rather than failing the whole fetch (one bad row used to drop us
+            # to the non-live fallback).
             if is_group and (home == "TBD" or away == "TBD"):
-                raise ProviderError("worldcup26.ir schema mismatch (missing team names)")
+                skipped += 1
+                continue
 
             status = _status(g.get("finished", "FALSE"), g.get("time_elapsed", ""))
             if status == SCHEDULED:
@@ -131,4 +155,6 @@ class WorldCup26Provider(BaseProvider):
                     minute=_minute(g.get("time_elapsed", "")) if status == LIVE else None,
                 )
             )
+        if not matches:
+            raise ProviderError(f"worldcup26.ir had no usable games ({skipped} skipped)")
         return matches

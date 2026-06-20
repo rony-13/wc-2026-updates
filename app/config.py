@@ -36,7 +36,7 @@ class Config:
     # How often the backend pulls from upstream. The frontend polls the local
     # backend independently (today=30s, groups=60s) and always gets cached data
     # instantly, so this can stay gentle on the upstream rate limits.
-    REFRESH_SECONDS = _as_int("REFRESH_SECONDS", 30)
+    REFRESH_SECONDS = _as_int("REFRESH_SECONDS", 20)
 
     # --- server ----------------------------------------------------------
     HOST = os.environ.get("HOST", "127.0.0.1")

@@ -53,4 +53,10 @@ def api_preferences():
 @bp.route("/api/health")
 def api_health():
     svc = _service()
-    return jsonify({"ok": True, "source": svc._source, "updated_at": svc._updated_at})
+    return jsonify({
+        "ok": True,
+        "source": svc._source,
+        "updated_at": svc._updated_at,
+        "providers": [p.name for p in svc.providers],
+        "provider_errors": getattr(svc, "_provider_errors", {}),
+    })
