@@ -39,6 +39,15 @@ function fmtUpdated(iso) {
   return d.toLocaleString();
 }
 
+// Kickoff times render in the VIEWER'S OWN device timezone (standard practice
+// for live-score apps — ESPN, FlashScore, BBC Sport all do this), not a fixed
+// tournament-host timezone. utc_date is an absolute instant, so this is always
+// correct regardless of where the backend server happens to run.
+function kickoffLocal(utcIso) {
+  if (!utcIso) return "—";
+  return new Date(utcIso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
 // football-data.org is live; openfootball / seed are slower or offline.
 function liveBadge(word, color) {
   return `<strong style="color:${color};font-weight:700;letter-spacing:.05em;">${word}</strong>`;
@@ -97,7 +106,7 @@ function scorecard(m) {
   let state;
   if (live) state = `<span class="sc-state live">${m.minute ? m.minute + "'" : "LIVE"}</span>`;
   else if (finished) state = `<span class="sc-state ft">Full time</span>`;
-  else state = `<span class="sc-state">${escapeHtml(m.kickoff_local)}</span>`;
+  else state = `<span class="sc-state">${escapeHtml(kickoffLocal(m.utc_date))}</span>`;
 
   const hs = m.home_score == null ? "–" : m.home_score;
   const as = m.away_score == null ? "–" : m.away_score;

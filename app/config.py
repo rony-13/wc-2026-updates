@@ -42,6 +42,10 @@ class Config:
     HOST = os.environ.get("HOST", "127.0.0.1")
     PORT = _as_int("PORT", 8765)
     TIMEZONE = os.environ.get("DISPLAY_TIMEZONE", "")  # "" -> server local time
+    # "Today" rolls over at this local hour, not literal midnight, so a match
+    # that kicks off at 11pm doesn't disappear from "Today" the moment the
+    # clock crosses 12am — standard practice for night-spanning schedules.
+    SPORTS_DAY_CUTOFF_HOUR = _as_int("SPORTS_DAY_CUTOFF_HOUR", 5)
 
     # --- paths -----------------------------------------------------------
     BASE_DIR = _BASE_DIR

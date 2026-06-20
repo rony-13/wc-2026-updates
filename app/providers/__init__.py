@@ -31,7 +31,7 @@ def build_provider_chain(config) -> List[BaseProvider]:
 
     # 1. Real-time, free, no key — unless explicitly disabled.
     if os.environ.get("WC26_LIVE", "1").strip() != "0":
-        chain.append(WorldCup26Provider())
+        chain.append(WorldCup26Provider(seed_dir=getattr(config, "SEED_DIR", None)))
 
     # 2. football-data.org, only when a key is configured.
     key = getattr(config, "FOOTBALL_DATA_API_KEY", "") or ""

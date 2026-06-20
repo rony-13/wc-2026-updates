@@ -18,10 +18,11 @@ Live matches are always shown regardless of date.
 """
 from __future__ import annotations
 
+import csv
 import os
 import time
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import requests
 
@@ -59,7 +60,12 @@ def _minute(time_elapsed: str) -> Optional[int]:
 
 
 def _kickoff_iso(local_date: str, offset_hours: int) -> str:
-    # "06/11/2026 13:00" with no tz -> apply the assumed offset, return UTC ISO
+    # "06/11/2026 13:00" with no tz -> apply the assumed offset, return UTC ISO.
+    # Fallback only: the feed's local_date carries no per-venue timezone, so this
+    # single fixed offset is wrong for non-Eastern venues (Pacific/Central). We
+    # prefer the cross-referenced seed lookup in _load_trusted_kickoffs() below;
+    # this only fires for fixtures that lookup can't resolve (e.g. knockout
+    # matchups not yet present in the seed).
     try:
         naive = datetime.strptime(local_date.strip(), "%m/%d/%Y %H:%M")
         tz = timezone(timedelta(hours=offset_hours))
@@ -68,12 +74,45 @@ def _kickoff_iso(local_date: str, offset_hours: int) -> str:
         return datetime.now(timezone.utc).isoformat()
 
 
+def _load_trusted_kickoffs(seed_dir: Optional[str]) -> Dict[Tuple[str, str], str]:
+    """Build a {sorted(team_pair): correct UTC kickoff} lookup from the bundled
+    seed schedule (data/seed/matches.csv, sourced from openfootball, which
+    parses each match's real per-venue UTC offset correctly).
+
+    worldcup26.ir's `local_date` has no timezone marker, so a fixed assumed
+    offset is wrong for any venue outside it (e.g. Pacific/Central games are
+    off by 1-3 hours) -- which can flip which calendar day a match falls on
+    right around midnight. Since the tournament schedule is fixed and known in
+    advance, cross-referencing by team pair sidesteps the guess entirely for
+    every group-stage fixture. Knockout pairings not yet in the seed simply
+    fall back to the offset guess (see _kickoff_iso).
+    """
+    lookup: Dict[Tuple[str, str], str] = {}
+    if not seed_dir:
+        return lookup
+    path = os.path.join(seed_dir, "matches.csv")
+    try:
+        with open(path, newline="", encoding="utf-8") as fh:
+            for row in csv.DictReader(fh):
+                home = (row.get("home") or "").strip().lower()
+                away = (row.get("away") or "").strip().lower()
+                utc_date = (row.get("utc_date") or "").strip()
+                if home and away and utc_date:
+                    key = tuple(sorted((home, away)))
+                    lookup.setdefault(key, utc_date)
+    except (OSError, csv.Error):
+        pass  # missing/unreadable seed -> just fall back to the offset guess
+    return lookup
+
+
 class WorldCup26Provider(BaseProvider):
     name = "worldcup26.ir"
     min_interval_seconds = 15  # real-time source; poll briskly but politely
 
-    def __init__(self, timeout: int = 20, tz_offset: Optional[int] = None):
+    def __init__(self, timeout: int = 20, tz_offset: Optional[int] = None,
+                 seed_dir: Optional[str] = None):
         self.timeout = timeout
+        self._trusted_kickoffs = _load_trusted_kickoffs(seed_dir)
         if tz_offset is None:
             try:
                 tz_offset = int(os.environ.get("WC26_TZ_OFFSET", "-4"))
@@ -134,6 +173,7 @@ class WorldCup26Provider(BaseProvider):
                 skipped += 1
                 continue
 
+            trusted = self._trusted_kickoffs.get(tuple(sorted((home.lower(), away.lower()))))
             status = _status(g.get("finished", "FALSE"), g.get("time_elapsed", ""))
             if status == SCHEDULED:
                 home_score = away_score = None  # ignore 0–0 placeholders before kickoff
@@ -146,7 +186,7 @@ class WorldCup26Provider(BaseProvider):
                     id=str(g.get("id", "")),
                     group=group,
                     stage=stage,
-                    utc_date=_kickoff_iso(g.get("local_date", ""), self.tz_offset),
+                    utc_date=trusted or _kickoff_iso(g.get("local_date", ""), self.tz_offset),
                     status=status,
                     home=home,
                     away=away,

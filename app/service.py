@@ -214,16 +214,27 @@ class WorldCupService:
         with self._lock:
             return list(self._matches), self._source, self._updated_at
 
+    def _sports_day(self, dt: datetime) -> "date":
+        """The 'sports day' a given local datetime belongs to: the calendar
+        date rolls over at SPORTS_DAY_CUTOFF_HOUR (default 5am), not midnight,
+        so an 11pm kickoff that finishes after midnight stays grouped with the
+        evening it started, instead of vanishing from "Today" at 12:00am."""
+        cutoff = getattr(self.config, "SPORTS_DAY_CUTOFF_HOUR", 5)
+        if dt.hour < cutoff:
+            dt = dt - timedelta(days=1)
+        return dt.date()
+
     def get_today(self) -> dict:
         matches, source, updated_at = self._snapshot()
-        today = datetime.now(self._tz).date()
+        sports_day = self._sports_day(datetime.now(self._tz))
         todays = [
             m for m in matches
-            if m.kickoff().astimezone(self._tz).date() == today or m.status == LIVE
+            if self._sports_day(m.kickoff().astimezone(self._tz)) == sports_day
+            or m.status == LIVE
         ]
         todays.sort(key=lambda m: m.kickoff())
         return {
-            "date": today.isoformat(),
+            "date": sports_day.isoformat(),
             "source": source,
             "updated_at": updated_at,
             "matches": [self._match_view(m) for m in todays],
