@@ -135,7 +135,7 @@ function groupCard(g) {
     const star = tier === "fav" ? "★" : "";
     return `
     <tr class="${cls}">
-      <td class="team-col"><span class="star-slot">${star}</span><span class="pos">${r.rank}</span>${escapeHtml(r.team)}</td>
+      <td class="team-col"><span class="team-wrap"><span class="star-slot">${star}</span><span class="pos">${r.rank}</span>${escapeHtml(r.team)}</span></td>
       <td>${r.played}</td>
       <td>${r.won}-${r.draw}-${r.lost}</td>
       <td>${r.goal_difference > 0 ? "+" : ""}${r.goal_difference}</td>

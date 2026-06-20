@@ -27,6 +27,8 @@
 
 body {
   margin: 0;
+  display: flex;
+  flex-direction: column;
   background:
     radial-gradient(1200px 600px at 50% -10%, #15303f 0%, transparent 60%),
     var(--bg);
@@ -90,13 +92,13 @@ body {
 .status.error .dot { background: var(--live); }
 
 /* ---- layout ----------------------------------------------------------- */
-main { padding: 22px; max-width: 1400px; margin: 0 auto; }
-.band { margin-bottom: 30px; }
+main { padding: 12px 24px; max-width: none; margin: 0; flex: 1 0 auto; }
+.band { margin-bottom: 14px; }
 .band-head {
   display: flex; align-items: baseline; gap: 14px;
-  margin: 0 2px 12px;
+  margin: 0 2px 7px;
   border-bottom: 1px solid var(--line);
-  padding-bottom: 8px;
+  padding-bottom: 6px;
 }
 .band-head h2 {
   font-family: var(--font-display);
@@ -117,9 +119,9 @@ main { padding: 22px; max-width: 1400px; margin: 0 auto; }
 /* ---- today scorecards ------------------------------------------------- */
 .scorestrip {
   display: flex;
-  gap: 14px;
+  gap: 12px;
   overflow-x: auto;
-  padding: 4px 2px 12px;
+  padding: 2px 2px 8px;
   scroll-snap-type: x proximity;
 }
 .scorestrip::-webkit-scrollbar { height: 8px; }
@@ -127,14 +129,14 @@ main { padding: 22px; max-width: 1400px; margin: 0 auto; }
 
 .scorecard {
   scroll-snap-align: start;
-  flex: 0 0 290px;
+  flex: 0 0 258px;
   background: linear-gradient(180deg, var(--surface-2), var(--surface));
   border: 1px solid var(--line);
   border-radius: 12px;
-  padding: 12px 14px 14px;
+  padding: 9px 12px 10px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
 }
 .scorecard.is-live { border-color: rgba(255, 82, 82, 0.55); }
 /* a favorite/followed team playing today tints the whole card */
@@ -159,10 +161,10 @@ main { padding: 22px; max-width: 1400px; margin: 0 auto; }
 .sc-team { font-size: 17px; font-weight: 600; letter-spacing: 0.01em; }
 .sc-score {
   font-family: var(--font-display);
-  font-size: 26px;
+  font-size: 21px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  min-width: 22px;
+  min-width: 20px;
   text-align: right;
   color: var(--text);
 }
@@ -172,9 +174,11 @@ main { padding: 22px; max-width: 1400px; margin: 0 auto; }
 /* ---- group tables ----------------------------------------------------- */
 .groupgrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
 }
+@media (min-width: 860px)  { .groupgrid { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 1280px) { .groupgrid { grid-template-columns: repeat(4, 1fr); } }
 .groupcard {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -185,8 +189,8 @@ main { padding: 22px; max-width: 1400px; margin: 0 auto; }
   font-family: var(--font-display);
   text-transform: uppercase;
   letter-spacing: 0.14em;
-  font-size: 13px;
-  padding: 10px 14px;
+  font-size: 12px;
+  padding: 6px 12px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--line);
 }
@@ -198,12 +202,12 @@ table.table th {
   font-size: 10.5px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  padding: 8px 6px;
+  padding: 5px 6px;
   border-bottom: 1px solid var(--line);
 }
 table.table th.team-col, table.table td.team-col { text-align: left; padding-left: 14px; }
-table.table td { padding: 9px 6px; text-align: right; font-variant-numeric: tabular-nums; }
-table.table td.team-col { display: flex; align-items: center; gap: 8px; }
+table.table td { padding: 5px 6px; text-align: right; font-variant-numeric: tabular-nums; }
+table.table .team-wrap { display: flex; align-items: center; gap: 8px; }
 table.table td.pts { font-weight: 700; }
 table.table tbody tr { border-bottom: 1px solid rgba(41, 65, 80, 0.5); }
 table.table tbody tr:last-child { border-bottom: none; }
@@ -234,7 +238,7 @@ tr.is-fav {
 /* ---- footer ----------------------------------------------------------- */
 .foot {
   display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-  max-width: 1400px; margin: 0 auto; padding: 16px 22px 30px;
+  max-width: none; margin: 0; padding: 11px 24px 12px;
   color: var(--muted); font-size: 12px; border-top: 1px solid var(--line);
 }
 .empty { color: var(--muted); font-size: 13px; padding: 14px 2px; }
@@ -253,6 +257,8 @@ tr.is-fav {
   border-radius: 14px; box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
   overflow: hidden;
 }
+/* the `hidden` attribute must win over .picker's display:flex, otherwise the
+   panel shows open by default */
 .picker[hidden], .picker-backdrop[hidden] { display: none; }
 .picker-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -316,3 +322,13 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   .topbar-right { gap: 10px; }
   .wc-host { display: none; }
 }
+
+/* ---- fill the viewport height (no dead space, footer at the bottom) ---- */
+main { display: flex; flex-direction: column; }
+main > .band:last-of-type { flex: 1 1 auto; display: flex; flex-direction: column; margin-bottom: 0; }
+main > .band:last-of-type .groupgrid { flex: 1 1 auto; grid-auto-rows: 1fr; align-content: stretch; }
+.groupcard { display: flex; flex-direction: column; }
+.groupcard table.table { flex: 1 1 auto; height: 100%; }
+/* keep row content vertically centered when rows stretch to fill height */
+table.table td, table.table th { vertical-align: middle; }
+.groupcard table.table tbody { vertical-align: middle; }
