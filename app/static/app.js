@@ -94,6 +94,12 @@ function teamLabel(name) {
   return `${star}${escapeHtml(name)}`;
 }
 
+function scorersLine(scorers) {
+  if (!scorers || !scorers.length) return "";
+  const text = scorers.map(escapeHtml).join(", ");
+  return `<div style="font-size:11px;color:var(--muted);margin:1px 0 5px;line-height:1.35;">${text}</div>`;
+}
+
 function scorecard(m) {
   const live = m.is_live;
   const finished = m.status === "FINISHED";
@@ -116,7 +122,9 @@ function scorecard(m) {
     <div class="scorecard ${cls}" role="listitem">
       <div class="sc-top"><span class="sc-group">${group}</span>${state}</div>
       <div class="sc-row"><span class="sc-team">${teamLabel(m.home)}</span><span class="sc-score">${hs}</span></div>
+      ${scorersLine(m.home_scorers)}
       <div class="sc-row"><span class="sc-team">${teamLabel(m.away)}</span><span class="sc-score">${as}</span></div>
+      ${scorersLine(m.away_scorers)}
       ${m.venue ? `<div class="sc-venue">${escapeHtml(m.venue)}</div>` : ""}
     </div>`;
 }
@@ -288,7 +296,9 @@ function closePicker() {
 }
 
 function wirePicker() {
-  $("#myteams-btn").addEventListener("click", () =>
+  const myTeamsBtn = $("#myteams-btn");
+  if (!myTeamsBtn) return;  // hidden server-side in read-only (public) mode
+  myTeamsBtn.addEventListener("click", () =>
     $("#picker").hidden ? openPicker() : closePicker()
   );
   $("#picker-close").addEventListener("click", closePicker);

@@ -40,6 +40,11 @@ class Config:
 
     # --- server ----------------------------------------------------------
     HOST = os.environ.get("HOST", "127.0.0.1")
+    # Set PUBLIC_READONLY=1 when exposing this to the public internet (e.g.
+    # behind a Cloudflare Tunnel): visitors can view everything but cannot
+    # change the favorite/following teams -- only the host, editing
+    # data/cache/preferences.json directly on the VM, can.
+    PUBLIC_READONLY = os.environ.get("PUBLIC_READONLY", "0").strip() == "1"
     PORT = _as_int("PORT", 8765)
     TIMEZONE = os.environ.get("DISPLAY_TIMEZONE", "")  # "" -> server local time
     # A FINISHED match stays under "Today" for this many hours after kickoff,

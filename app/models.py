@@ -32,6 +32,8 @@ class Match:
     away_score: Optional[int] = None
     minute: Optional[int] = None  # only meaningful while LIVE
     venue: Optional[str] = None
+    home_scorers: list = field(default_factory=list)  # e.g. ["F. Balogun 31'", "F. Balogun 45'+5'"]
+    away_scorers: list = field(default_factory=list)
 
     def kickoff(self) -> datetime:
         return datetime.fromisoformat(self.utc_date).astimezone(timezone.utc)

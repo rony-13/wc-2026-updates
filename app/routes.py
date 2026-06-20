@@ -22,6 +22,7 @@ def index():
         today_interval=30,
         groups_interval=60,
         refresh_seconds=cfg["WC_CONFIG"].REFRESH_SECONDS,
+        read_only=cfg["WC_CONFIG"].PUBLIC_READONLY,
     )
 
 
@@ -45,6 +46,10 @@ def api_preferences():
     store = _prefs()
     if request.method == "GET":
         return jsonify(store.load())
+    if current_app.config["WC_CONFIG"].PUBLIC_READONLY:
+        # Public deployment: favorite/following are set by the host editing
+        # data/cache/preferences.json directly -- visitors can view but not change.
+        return jsonify({"error": "preferences are managed by the host on this deployment"}), 403
     body = request.get_json(silent=True) or {}
     saved = store.save(body.get("favorite"), body.get("following") or [])
     return jsonify(saved)
