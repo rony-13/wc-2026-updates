@@ -21,11 +21,31 @@ from .models import Match
 _FIELDS = [
     "id", "group", "stage", "utc_date", "status",
     "home", "away", "home_score", "away_score", "minute", "venue",
+    "home_scorers", "away_scorers",
 ]
 
 
 def _to_int(value: str) -> Optional[int]:
     return int(value) if value not in ("", None) else None
+
+
+def _to_cell(value):
+    """CSV cells are strings; lists (home_scorers/away_scorers) need explicit
+    JSON encoding, not Python's str(list) -- that wouldn't round-trip safely
+    given scorer strings already contain apostrophes (e.g. "31'")."""
+    if isinstance(value, list):
+        return json.dumps(value, ensure_ascii=False) if value else ""
+    return "" if value is None else value
+
+
+def _from_cell_list(value) -> list:
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, list) else []
+    except (ValueError, TypeError):
+        return []
 
 
 class CsvStore:
@@ -43,7 +63,7 @@ class CsvStore:
             writer = csv.DictWriter(fh, fieldnames=_FIELDS)
             writer.writeheader()
             for m in matches:
-                writer.writerow({k: ("" if v is None else v) for k, v in m.to_dict().items()})
+                writer.writerow({k: _to_cell(v) for k, v in m.to_dict().items()})
         os.replace(tmp, self.matches_path)
         with open(self.meta_path, "w", encoding="utf-8") as fh:
             json.dump(
@@ -69,6 +89,8 @@ class CsvStore:
                         away_score=_to_int(row["away_score"]),
                         minute=_to_int(row["minute"]),
                         venue=row["venue"] or None,
+                        home_scorers=_from_cell_list(row.get("home_scorers")),
+                        away_scorers=_from_cell_list(row.get("away_scorers")),
                     )
                 )
         return matches
