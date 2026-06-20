@@ -69,6 +69,20 @@ body {
 }
 .wc-host { color: var(--muted); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; }
 
+.topbar-clock {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  white-space: nowrap;
+  pointer-events: none; /* never intercepts clicks meant for the bar behind it */
+}
+
 .topbar-right { display: flex; align-items: center; gap: 16px; }
 
 .myteams-btn {
@@ -119,24 +133,26 @@ main { padding: 12px 24px; max-width: none; margin: 0; flex: 1 0 auto; }
 /* ---- today scorecards ------------------------------------------------- */
 .scorestrip {
   display: flex;
-  gap: 12px;
-  overflow-x: auto;
-  padding: 2px 2px 8px;
-  scroll-snap-type: x proximity;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+  padding: 2px 2px 10px;
+  /* a day with an unusually large number of matches wraps to extra rows;
+     this is just a safety cap so it can never blow past a sane height */
+  max-height: 50vh;
+  overflow-y: auto;
 }
-.scorestrip::-webkit-scrollbar { height: 8px; }
-.scorestrip::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
 
 .scorecard {
-  scroll-snap-align: start;
-  flex: 0 0 258px;
+  flex: 0 1 320px;
+  max-width: 380px;
   background: linear-gradient(180deg, var(--surface-2), var(--surface));
   border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 9px 12px 10px;
+  border-radius: 14px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 .scorecard.is-live { border-color: rgba(255, 82, 82, 0.55); }
 /* a favorite/followed team playing today tints the whole card */
@@ -147,7 +163,7 @@ main { padding: 12px 24px; max-width: none; margin: 0; flex: 1 0 auto; }
   box-shadow: 0 0 0 1px var(--fav-glow), 0 8px 24px -12px var(--fav-glow);
 }
 .sc-team .team-star { color: var(--fav); margin-right: 5px; font-size: 14px; }
-.sc-top { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; }
+.sc-top { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; }
 .sc-group { color: var(--accent); font-family: var(--font-display); letter-spacing: 0.12em; text-transform: uppercase; }
 .sc-state { color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
 .sc-state.live { color: var(--live); font-weight: 700; }
@@ -158,10 +174,10 @@ main { padding: 12px 24px; max-width: none; margin: 0; flex: 1 0 auto; }
 .sc-state.ft { color: var(--muted); }
 
 .sc-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; }
-.sc-team { font-size: 17px; font-weight: 600; letter-spacing: 0.01em; }
+.sc-team { font-size: 18px; font-weight: 600; letter-spacing: 0.01em; }
 .sc-score {
   font-family: var(--font-display);
-  font-size: 21px;
+  font-size: 24px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   min-width: 20px;
@@ -169,7 +185,7 @@ main { padding: 12px 24px; max-width: none; margin: 0; flex: 1 0 auto; }
   color: var(--text);
 }
 .scorecard.sched .sc-score { color: var(--muted); }
-.sc-venue { color: var(--muted); font-size: 11px; border-top: 1px dashed var(--line); padding-top: 8px; }
+.sc-venue { color: var(--muted); font-size: 11px; border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 2px; }
 
 /* ---- group tables ----------------------------------------------------- */
 .groupgrid {
@@ -316,11 +332,12 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 }
 @media (max-width: 560px) {
   main { padding: 16px; }
-  .scorecard { flex-basis: 84vw; }
+  .scorecard { max-width: none; }
   .groupgrid { grid-template-columns: 1fr; }
   .picker { top: auto; bottom: 0; right: 0; left: 0; width: 100%; max-height: 80vh; border-radius: 16px 16px 0 0; }
   .topbar-right { gap: 10px; }
   .wc-host { display: none; }
+  .topbar-clock { display: none; }
 }
 
 /* ---- fill the viewport height (no dead space, footer at the bottom) ---- */

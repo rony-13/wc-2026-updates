@@ -97,7 +97,7 @@ function teamLabel(name) {
 function scorersLine(scorers) {
   if (!scorers || !scorers.length) return "";
   const text = scorers.map(escapeHtml).join(", ");
-  return `<div style="font-size:11px;color:var(--muted);margin:1px 0 5px;line-height:1.35;">${text}</div>`;
+  return `<div style="font-size:12px;color:var(--muted);margin:2px 0 6px;line-height:1.45;">${text}</div>`;
 }
 
 function scorecard(m) {
@@ -323,11 +323,23 @@ function start(fn, seconds) {
   setInterval(fn, seconds * 1000);
 }
 
+// Live local clock in the topbar -- the viewer's own device time/timezone
+// (same standard used for kickoff times elsewhere), not a fixed host zone.
+function tickClock() {
+  const el = $("#topbar-clock");
+  if (!el) return;
+  el.textContent = new Date().toLocaleString(undefined, {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+}
+
 (async function init() {
   await Promise.all([loadPreferences(), loadTeams()]);
   wirePicker();
   start(loadToday, CFG.todayInterval);
   start(loadGroups, CFG.groupsInterval);
+  start(tickClock, 1);
   // refresh the team list periodically so it fills in once live data arrives
   setInterval(loadTeams, 5 * 60 * 1000);
 })();
