@@ -214,27 +214,34 @@ class WorldCupService:
         with self._lock:
             return list(self._matches), self._source, self._updated_at
 
-    def _sports_day(self, dt: datetime) -> "date":
-        """The 'sports day' a given local datetime belongs to: the calendar
-        date rolls over at SPORTS_DAY_CUTOFF_HOUR (default 5am), not midnight,
-        so an 11pm kickoff that finishes after midnight stays grouped with the
-        evening it started, instead of vanishing from "Today" at 12:00am."""
-        cutoff = getattr(self.config, "SPORTS_DAY_CUTOFF_HOUR", 5)
-        if dt.hour < cutoff:
-            dt = dt - timedelta(days=1)
-        return dt.date()
-
     def get_today(self) -> dict:
+        """'Today' = live matches (always) + anything kicking off on today's
+        local calendar date + anything that finished very recently.
+
+        We deliberately do NOT use a single fixed "rollover hour" (e.g. 5am)
+        here. North America's host venues span ~14 UTC hours of kickoffs,
+        which lands completely differently depending on the viewer: that
+        window is late-evening-to-next-morning for South Asia/Gulf viewers,
+        but collapses into one daytime block for Australia, and is a normal
+        evening for North America. No single local hour is fair to all of
+        them at once. Instead, a FINISHED match simply stays visible for
+        LATE_MATCH_GRACE_HOURS after its kickoff (catching an 11pm kickoff
+        that wraps up just after midnight) -- this reacts to *recency*, not
+        local clock time, so it behaves the same for every timezone.
+        """
         matches, source, updated_at = self._snapshot()
-        sports_day = self._sports_day(datetime.now(self._tz))
+        now_local = datetime.now(self._tz)
+        today = now_local.date()
+        grace = timedelta(hours=getattr(self.config, "LATE_MATCH_GRACE_HOURS", 4))
         todays = [
             m for m in matches
-            if self._sports_day(m.kickoff().astimezone(self._tz)) == sports_day
-            or m.status == LIVE
+            if m.status == LIVE
+            or m.kickoff().astimezone(self._tz).date() == today
+            or (m.status == FINISHED and (now_local - m.kickoff().astimezone(self._tz)) <= grace)
         ]
         todays.sort(key=lambda m: m.kickoff())
         return {
-            "date": sports_day.isoformat(),
+            "date": today.isoformat(),
             "source": source,
             "updated_at": updated_at,
             "matches": [self._match_view(m) for m in todays],
