@@ -159,11 +159,16 @@ class WorldCup26Provider(BaseProvider):
         self.tz_offset = tz_offset
 
     def _get_payload(self) -> dict:
-        """GET the games feed, retrying once — the free API can be slow under
-        heavy load during live matches, and a single timeout shouldn\'t drop us
-        to the non-live fallback."""
+        """GET the games feed, retrying once if the first attempt doesn't get
+        a reply -- worldcup26.ir has been responding slower under load lately,
+        so the first try keeps the normal `timeout` budget (the common case
+        still resolves quickly), and only the retry gets a longer, doubled
+        budget to absorb that slowdown. Either way this returns the moment a
+        response actually arrives -- a fast reply never waits out the full
+        budget; this only matters when the server is genuinely slow/silent.
+        """
         last_exc = None
-        for attempt in range(2):
+        for budget in (self.timeout, self.timeout * 2):
             try:
                 resp = requests.get(
                     GAMES_URL,
@@ -177,13 +182,13 @@ class WorldCup26Provider(BaseProvider):
                             "Chrome/125.0.0.0 Safari/537.36"
                         ),
                     },
-                    timeout=self.timeout,
+                    timeout=budget,
                 )
                 resp.raise_for_status()
                 return resp.json()
             except (requests.RequestException, ValueError) as exc:
                 last_exc = exc
-                if attempt == 0:
+                if budget == self.timeout:
                     time.sleep(1.0)
         raise ProviderError(f"worldcup26.ir fetch failed after retry: {last_exc}")
 

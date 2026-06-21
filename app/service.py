@@ -8,6 +8,12 @@ Refresh strategy:
   game. Once we have real-time data for the game we persist it through outages
   (the fallback only updates after the match, so the last live snapshot is
   always the better answer).
+* **A successful response can still be wrong**, not just absent: if
+  worldcup26.ir replies but still reports a match as "not started" well past
+  (``STALE_NOT_STARTED_GRACE_MINUTES``) its real kickoff time, that's treated
+  the same as a failure -- a real match doesn't sit at "not started" for that
+  long. We go straight to a fallback for that cycle rather than waiting out
+  the usual failure grace period (the staleness window itself already is one).
 * **Between matches** there is no live data to chase, so we poll slowly
   (``IDLE_POLL_SECONDS``) and keep whichever reachable source is *freshest*
   (carries the most completed results) — that may be worldcup26.ir or a fallback.
@@ -20,7 +26,7 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
-from .models import Match, LIVE, FINISHED
+from .models import Match, LIVE, FINISHED, SCHEDULED
 from .providers import build_provider_chain, ProviderError
 from .standings import compute_standings
 from .knockout import compute_round_of_32, compute_knockout_bracket, current_stage, best_eight_thirds
@@ -35,6 +41,7 @@ LIVE_FAIL_GRACE_SECONDS = 60  # keep retrying worldcup26.ir this long before fal
 MATCH_WINDOW_MINUTES = 130    # a kickoff keeps us in "live" mode this many minutes
 PRE_KICKOFF_MINUTES = 2       # start live polling slightly before kickoff
 ENRICH_MIN_INTERVAL_SECONDS = 1800  # how often to retry filling gaps from a fallback
+STALE_NOT_STARTED_GRACE_MINUTES = 25  # "still not started" this long past kickoff is no longer plausible
 
 
 class WorldCupService:
@@ -129,9 +136,35 @@ class WorldCupService:
                 return True
         return False
 
+    def _find_stale_not_started(self, matches: List[Match], now_dt: datetime) -> List[str]:
+        """Labels for any match whose kickoff was more than
+        STALE_NOT_STARTED_GRACE_MINUTES ago (so it should clearly be live or
+        finished by now) but worldcup26.ir is still reporting as SCHEDULED.
+        Real matches don't sit at "not started" for 25+ minutes past kickoff
+        with a null score -- that's the feed having gone stale for that game,
+        not us checking too early. Bounded to the normal live-match window so
+        this never flags a fixture that's simply far in the future or so long
+        past that it's no longer being live-polled at all."""
+        grace = timedelta(minutes=STALE_NOT_STARTED_GRACE_MINUTES)
+        window = timedelta(minutes=MATCH_WINDOW_MINUTES)
+        stale = []
+        for m in matches:
+            if m.status != SCHEDULED or not m.group:
+                continue
+            try:
+                ko = m.kickoff()
+            except Exception:  # noqa: BLE001 - bad date shouldn't break detection
+                continue
+            if (ko + grace) <= now_dt <= (ko + window):
+                stale.append(f"{m.home} vs {m.away}")
+        return stale
+
     def _refresh_live(self, now: float) -> bool:
         """Match in progress: worldcup26.ir is authoritative; persist it through
-        outages and only fall back after a sustained failure with no live data."""
+        outages and only fall back after a sustained failure with no live data.
+        A response that arrives but is stale (see _find_stale_not_started) is
+        treated as untrustworthy too, going straight to a fallback rather than
+        waiting out the usual failure grace period."""
         errors: dict = {}
         if self._wc is not None:
             try:
@@ -141,12 +174,37 @@ class WorldCupService:
                 if self._wc_fail_since is None:
                     self._wc_fail_since = now
             else:
+                stale = self._find_stale_not_started(matches, datetime.now(timezone.utc))
+                if not stale:
+                    self._commit(matches, self._wc.name, errors)
+                    self._live_realtime_ok = True
+                    self._wc_fail_since = None
+                    return True
+
+                # worldcup26.ir responded, but at least one match that should
+                # clearly be live/finished by now is still "not started" --
+                # that's stale data, not a transient hiccup, so go straight
+                # to a fallback for this cycle instead of trusting it.
+                errors[self._wc.name] = (
+                    "stale: still 'not started' well past kickoff: " + ", ".join(stale)
+                )
+                for p in self._fallbacks:
+                    try:
+                        fallback_matches = p.fetch_matches()
+                    except ProviderError as exc:
+                        errors[p.name] = str(exc)
+                        continue
+                    self._commit(fallback_matches, p.name, errors)
+                    return True
+                # no fallback reachable either -- still commit worldcup26.ir's
+                # data (correct for every match except the stale one, better
+                # than nothing) but don't mark it trustworthy, so we keep
+                # trying a fallback on the next cycle too.
                 self._commit(matches, self._wc.name, errors)
-                self._live_realtime_ok = True
-                self._wc_fail_since = None
+                self._live_realtime_ok = False
                 return True
 
-        # worldcup26.ir failed this cycle.
+        # worldcup26.ir failed outright this cycle.
         if self._live_realtime_ok:
             # Already have real-time data for this game — keep it. The fallback
             # only updates after the match, so it is never an improvement here.
@@ -236,7 +294,37 @@ class WorldCupService:
                 if venue:
                     m.venue = venue  # mutates the same Match objects in self._matches
 
+    def _infer_live_status(self, matches: List[Match]) -> None:
+        """Some sources only ever report SCHEDULED or FINISHED -- never a
+        "live, in progress" state -- because they're not built for
+        second-by-second tracking. openfootball is exactly this: it has no
+        live concept at all (see openfootball.py), so once we're reading
+        from it, a match that's clearly underway by the clock (kickoff has
+        passed, comfortably within a normal match's length) would otherwise
+        sit there looking identical to one that simply hasn't started yet.
+        This corrects only the STATUS, locally, in place (same pattern as
+        _enrich_missing_fields) -- it never invents a score. An
+        inferred-live match still shows whatever score the source actually
+        gave it (often none), just correctly labeled as in progress instead
+        of "not started", which is what was actually misleading. Runs
+        uniformly for every commit regardless of source: it's a no-op for
+        a source (worldcup26.ir, when healthy) that already reports LIVE
+        correctly, since this only ever touches matches still SCHEDULED."""
+        now_dt = datetime.now(timezone.utc)
+        grace = timedelta(minutes=2)  # avoid flapping right at the kickoff instant
+        window = timedelta(minutes=MATCH_WINDOW_MINUTES)
+        for m in matches:
+            if m.status != SCHEDULED or not m.group:
+                continue
+            try:
+                ko = m.kickoff()
+            except Exception:  # noqa: BLE001 - bad date shouldn't break this
+                continue
+            if (ko + grace) <= now_dt <= (ko + window):
+                m.status = LIVE
+
     def _commit(self, matches: List[Match], source: str, errors: dict) -> None:
+        self._infer_live_status(matches)
         self.store.save(matches, source)
         with self._lock:
             self._matches = matches
