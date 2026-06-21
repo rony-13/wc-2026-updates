@@ -5,14 +5,24 @@ A tiny, self-contained **desktop dashboard** for the FIFA World Cup 2026
 and stays open, showing:
 
 - **Today's matches** across the top as live scorecards — like the score bug on
-  a broadcast — refreshing every **30 seconds**.
+  a broadcast — refreshing every **20 seconds**, with goal scorers listed under
+  the score and a red border on any match currently in progress.
 - **All 12 group tables** below, recomputed **live** from match results and
-  refreshing every **60 seconds**, with the **top two of each group highlighted
-  in green** (the teams that advance).
+  refreshing every **60 seconds**. The **top two of each group** are highlighted
+  in green, and so are the **8 best third-place teams** across all groups — the
+  exact set that advances to the Round of 32 under the WC 2026 format —
+  recomputed live as results come in (toggleable; see `SHOW_PROJECTED_THIRDS`).
+- **A full Knockout Stage view** on its own tab: the bracket from Round of 32
+  through Round of 16, quarter-finals, semi-finals, the final, and the
+  third-place match. Slots are filled in as group results decide them and shown
+  as rules-based projections (or neutral candidate pairs) before then — never a
+  predicted winner.
 - **Your teams**: pick **one favorite** (gold star + a warm amber row that also
   tints its match in today's strip) and **follow as many others** as you like
   (a cooler blue row). Both stand out above the rest while the green "advances"
   marker stays visible.
+- **Light / Dark / System theme**, chosen from the top bar and remembered
+  between visits (no flash of the wrong theme on load).
 
 Python + Flask backend, a minimal vanilla-JS frontend, **no database**, and a
 CSV cache so it keeps working offline. Free to run with **zero configuration and
@@ -36,7 +46,7 @@ zero cost**.
 | Starts at login | One-command installers for **macOS** (LaunchAgent), **Windows** (Startup launcher), and **Linux** (XDG autostart) start it at login and keep it open. |
 
 The backend polls the upstream source on a gentle schedule and **caches**; the
-frontend polls only the *local* backend (every 30s / 60s) and always gets cached
+frontend polls only the *local* backend (every 20s / 60s) and always gets cached
 data instantly. That decoupling is what keeps the UI snappy without ever hitting
 an upstream rate limit.
 
@@ -113,7 +123,8 @@ cp .env.example .env
 | Variable | Default | Purpose |
 |---|---|---|
 | `FOOTBALL_DATA_API_KEY` | _(empty)_ | Optional. Enables faster live updates via football-data.org. |
-| `REFRESH_SECONDS` | `30` | How often the backend pulls from upstream. |
+| `REFRESH_SECONDS` | `20` | How often the backend pulls from upstream. |
+| `SHOW_PROJECTED_THIRDS` | `1` | Highlight the 8 best third-place teams (live projection) in green alongside each group's top two. Set to `0` to highlight only the guaranteed top two. |
 | `HOST` / `PORT` | `127.0.0.1` / `8765` | Server bind address. |
 | `DISPLAY_TIMEZONE` | _(machine local)_ | IANA name (e.g. `America/New_York`) for kickoff times and "today". |
 | `OPENFOOTBALL_URL` | GitHub raw URL | Override if you mirror the dataset. |
@@ -141,10 +152,11 @@ environment and never writes it to logs or the CSV cache. To get a free key
    background scheduler → │  WorldCupService (in-memory) │ → CSV cache (offline)
        every REFRESH_SECONDS                             │       ▲
                           └──────────────┬──────────────┘       │ seed (committed)
-                                         │ get_today / get_groups
+                  get_today / get_groups / get_knockout_bracket │
                        ┌─────────────────▼─────────────────┐
-   browser polls  →    │  Flask: /api/today  /api/groups    │
-   (30s / 60s)         └────────────────────────────────────┘
+   browser polls  →    │  Flask: /api/today /api/groups     │
+   (20s / 60s)         │         /api/knockout/bracket …    │
+                       └────────────────────────────────────┘
 ```
 
 - **Providers** (`app/providers/`) each return a normalized `Match` list. They
@@ -152,7 +164,14 @@ environment and never writes it to logs or the CSV cache. To get a free key
   then **football-data.org** if a key is set, then **openfootball** (free,
   ~daily) as the always-available fallback. Adding a source is one small file.
 - **Standings** (`app/standings.py`) are computed from matches: 3/1/0 points,
-  ordered by points → goal difference → goals for → name, top two flagged.
+  ordered by points → goal difference → goals for → name, top two flagged. The
+  best third-place teams across all groups are ranked by the same FIFA criteria
+  so the live "advances" highlight matches the 16-team Round of 32 field.
+- **Knockout** (`app/knockout.py`) resolves the whole bracket from current match
+  data — projecting each round's slots from the rules (or surfacing neutral
+  candidate pairs) until results decide them, never predicting a winner. The
+  best-third-place slot assignment uses a verified bipartite-matching algorithm,
+  not a naive greedy fill.
 - **Store** (`app/store.py`) persists matches to CSV and falls back to the
   committed seed.
 - **Service** (`app/service.py`) keeps state, refreshes on a schedule, and
@@ -166,7 +185,9 @@ environment and never writes it to logs or the CSV cache. To get a free key
 |---|---|
 | `GET /` | The dashboard page. |
 | `GET /api/today` | Today's matches (and any in-progress match). |
-| `GET /api/groups` | All 12 group tables with `qualifies` flags. |
+| `GET /api/groups` | All 12 group tables with `qualifies` / `provisional_qualify` flags. |
+| `GET /api/knockout/bracket` | Full bracket — every round (R32 → final + third place), each slot resolved from current data, with `current_stage` for the default open tab. |
+| `GET /api/knockout/round-of-32` | Just the projected/confirmed Round of 32 (the bracket's first round). |
 | `GET /api/teams` | The 48 nations, for the team picker. |
 | `GET` / `PUT /api/preferences` | Read / save your favorite + followed teams. |
 | `GET /api/health` | Source and last-updated timestamp. |
@@ -223,11 +244,13 @@ database, no account) and persists across restarts.
 ## Tests
 
 ```bash
-python tests/test_standings.py
+python tests/test_standings.py   # points, ranking, top-two + best-thirds flagging
+python tests/test_knockout.py    # bracket resolution, third-place slot assignment
+python tests/test_service.py     # live/stale detection, source fallback, refresh
 ```
 
-Covers points, ranking, live-vs-scheduled handling, top-two flagging, and
-knockout exclusion.
+Three suites cover standings and ranking, the knockout bracket logic (including
+the bipartite third-place assignment), and the service-layer live-data handling.
 
 ---
 
@@ -238,6 +261,11 @@ FIFA tie-break sequence also includes head-to-head results and disciplinary
 (fair-play) points, which are intentionally **not** modeled here to keep the
 logic simple and transparent. In the rare cases those deeper tie-breaks matter,
 the displayed order may differ from the official table.
+
+The same applies to the **best third-place projection**: it ranks third-place
+teams by the same available criteria, recomputed live as groups finish. It's an
+honest real-time projection, not a guarantee — the highlighted thirds can change
+as results come in, and the final set is only certain once every group is done.
 
 ---
 
