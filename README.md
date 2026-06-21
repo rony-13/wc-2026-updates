@@ -21,6 +21,7 @@ zero cost**.
 **Repository:** <https://github.com/rony-13/wc-2026-updates>
 
 ![Dashboard screenshot](docs/screenshot.png)
+![Knockout Page screenshot](docs/screenshot-knockout.png)
 
 ---
 
