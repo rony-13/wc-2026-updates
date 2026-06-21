@@ -54,6 +54,17 @@ class Config:
     # North America's host window lands very differently around the world).
     LATE_MATCH_GRACE_HOURS = _as_int("LATE_MATCH_GRACE_HOURS", 4)
 
+    # Of the 32 Round-of-32 slots, 24 are the guaranteed top two of each
+    # group (always highlighted green) and the other 8 go to the best-ranked
+    # third-place teams across all 12 groups, per FIFA's tiebreaker order
+    # (see app/knockout.py). With this on, whichever third-place teams are
+    # CURRENTLY in that top-8 -- recomputed live as group matches finish --
+    # are highlighted the same green as the guaranteed top two. It's always
+    # a real-time projection, not a guarantee, until every group is done.
+    # Set SHOW_PROJECTED_THIRDS=0 in the environment (or change the default
+    # below) to only ever highlight the guaranteed top two.
+    SHOW_PROJECTED_THIRDS = os.environ.get("SHOW_PROJECTED_THIRDS", "1").strip() == "1"
+
     # --- paths -----------------------------------------------------------
     BASE_DIR = _BASE_DIR
     CACHE_DIR = os.path.join(_BASE_DIR, "data", "cache")

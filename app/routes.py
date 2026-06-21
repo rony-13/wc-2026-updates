@@ -1,7 +1,7 @@
 """HTTP layer: one HTML page plus two JSON endpoints the page polls."""
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, render_template, current_app, request
+from flask import Blueprint, jsonify, render_template, current_app, request, redirect, url_for
 
 bp = Blueprint("main", __name__)
 
@@ -24,6 +24,14 @@ def index():
         refresh_seconds=cfg["WC_CONFIG"].REFRESH_SECONDS,
         read_only=cfg["WC_CONFIG"].PUBLIC_READONLY,
     )
+
+
+@bp.route("/favicon.ico")
+def favicon():
+    # Browsers request this path automatically regardless of the <link
+    # rel="icon"> tag in <head> -- redirect to the real one instead of
+    # 404ing on every single page load.
+    return redirect(url_for("static", filename="favicon.svg"))
 
 
 @bp.route("/api/today")

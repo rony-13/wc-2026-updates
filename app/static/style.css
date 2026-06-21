@@ -386,6 +386,7 @@ main { padding: 12px 24px; max-width: none; margin: 0; flex: 1 0 auto; }
   border-radius: 12px;
   overflow: hidden;
 }
+.groupcard.is-live { border-color: rgba(255, 82, 82, 0.55); }
 .gc-head {
   font-family: var(--font-display);
   text-transform: uppercase;

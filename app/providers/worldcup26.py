@@ -196,51 +196,61 @@ class WorldCup26Provider(BaseProvider):
         matches: List[Match] = []
         skipped = 0
         for g in games:
-            group_raw = str(g.get("group", "")).strip().upper()
-            is_group = (str(g.get("type", "")).lower() == "group") or (group_raw in _GROUP_LETTERS)
-            group = f"Group {group_raw}" if (is_group and group_raw in _GROUP_LETTERS) else None
-            stage = "GROUP_STAGE" if group else _KNOCKOUT_STAGE.get(group_raw, "KNOCKOUT")
+            try:
+                group_raw = str(g.get("group", "")).strip().upper()
+                is_group = (str(g.get("type", "")).lower() == "group") or (group_raw in _GROUP_LETTERS)
+                group = f"Group {group_raw}" if (is_group and group_raw in _GROUP_LETTERS) else None
+                stage = "GROUP_STAGE" if group else _KNOCKOUT_STAGE.get(group_raw, "KNOCKOUT")
 
-            home = (g.get("home_team_name_en") or "").strip()
-            away = (g.get("away_team_name_en") or "").strip()
-            # Knockout fixtures not yet decided carry a descriptive placeholder
-            # instead of a real team name (e.g. "Runner-up Group B") -- show
-            # that rather than a bare "TBD".
-            home = home or (g.get("home_team_label") or "").strip() or "TBD"
-            away = away or (g.get("away_team_label") or "").strip() or "TBD"
+                home = (g.get("home_team_name_en") or "").strip()
+                away = (g.get("away_team_name_en") or "").strip()
+                # Knockout fixtures not yet decided carry a descriptive placeholder
+                # instead of a real team name (e.g. "Runner-up Group B") -- show
+                # that rather than a bare "TBD".
+                home = home or (g.get("home_team_label") or "").strip() or "TBD"
+                away = away or (g.get("away_team_label") or "").strip() or "TBD"
 
-            # A real group game must carry team names. Skip a malformed record
-            # rather than failing the whole fetch (one bad row used to drop us
-            # to the non-live fallback).
-            if is_group and (home == "TBD" or away == "TBD"):
+                # A real group game must carry team names. Skip a malformed record
+                # rather than failing the whole fetch (one bad row used to drop us
+                # to the non-live fallback).
+                if is_group and (home == "TBD" or away == "TBD"):
+                    skipped += 1
+                    continue
+
+                trusted = self._trusted_schedule.get(tuple(sorted((_norm_name(home), _norm_name(away)))))
+                status = _status(g.get("finished", "FALSE"), g.get("time_elapsed", ""))
+                if status == SCHEDULED:
+                    home_score = away_score = None  # ignore 0–0 placeholders before kickoff
+                else:
+                    home_score = _to_int(g.get("home_score"))
+                    away_score = _to_int(g.get("away_score"))
+
+                matches.append(
+                    Match(
+                        id=str(g.get("id", "")),
+                        group=group,
+                        stage=stage,
+                        utc_date=(trusted or {}).get("utc_date") or _kickoff_iso(g.get("local_date", ""), self.tz_offset),
+                        status=status,
+                        home=home,
+                        away=away,
+                        home_score=home_score,
+                        away_score=away_score,
+                        minute=_minute(g.get("time_elapsed", "")) if status == LIVE else None,
+                        venue=(trusted or {}).get("venue"),
+                        home_scorers=_parse_scorers(g.get("home_scorers")),
+                        away_scorers=_parse_scorers(g.get("away_scorers")),
+                    )
+                )
+            except Exception:
+                # One record with an unexpected shape (a field type/value this
+                # parser doesn't yet handle) must never abort the whole feed --
+                # that would silently freeze every other game, including any
+                # live one, with no error visible anywhere. Skip just this
+                # record and keep going; if next cycle's payload no longer has
+                # the issue, that game catches back up on its own.
                 skipped += 1
                 continue
-
-            trusted = self._trusted_schedule.get(tuple(sorted((_norm_name(home), _norm_name(away)))))
-            status = _status(g.get("finished", "FALSE"), g.get("time_elapsed", ""))
-            if status == SCHEDULED:
-                home_score = away_score = None  # ignore 0–0 placeholders before kickoff
-            else:
-                home_score = _to_int(g.get("home_score"))
-                away_score = _to_int(g.get("away_score"))
-
-            matches.append(
-                Match(
-                    id=str(g.get("id", "")),
-                    group=group,
-                    stage=stage,
-                    utc_date=(trusted or {}).get("utc_date") or _kickoff_iso(g.get("local_date", ""), self.tz_offset),
-                    status=status,
-                    home=home,
-                    away=away,
-                    home_score=home_score,
-                    away_score=away_score,
-                    minute=_minute(g.get("time_elapsed", "")) if status == LIVE else None,
-                    venue=(trusted or {}).get("venue"),
-                    home_scorers=_parse_scorers(g.get("home_scorers")),
-                    away_scorers=_parse_scorers(g.get("away_scorers")),
-                )
-            )
         if not matches:
             raise ProviderError(f"worldcup26.ir had no usable games ({skipped} skipped)")
         return matches

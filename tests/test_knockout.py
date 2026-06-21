@@ -203,6 +203,35 @@ def test_compute_round_of_32_end_to_end_no_crash_and_correct_shape():
     assert winners_seen["Runner-up Group A"] == "A2"
 
 
+def test_provisional_qualify_marks_exactly_the_best_eight_thirds():
+    """Mirrors what service.get_groups() does when SHOW_PROJECTED_THIRDS is on:
+    mark the live best-8 third-place rows the same way the API/service would,
+    and check exactly those 8 (and only those 8) end up flagged."""
+    matches = []
+    for letter in ALL_GROUPS:
+        teams = [f"{letter}1", f"{letter}2", f"{letter}3", f"{letter}4"]
+        matches += _round_robin(letter, teams, None)
+
+    tables = compute_standings(matches)
+    for row in best_eight_thirds(tables):
+        row.provisional_qualify = True
+
+    flagged = [r for rows in tables.values() for r in rows if r.provisional_qualify]
+    assert len(flagged) == 8
+    assert all(r.rank == 3 for r in flagged)  # only ever 3rd-place rows
+    assert all(not r.qualifies for r in flagged)  # disjoint from the guaranteed top two
+
+    # the guaranteed top two are completely untouched by this
+    top_two = [r for rows in tables.values() for r in rows if r.qualifies]
+    assert len(top_two) == 24
+    assert all(not r.provisional_qualify for r in top_two)
+
+    # in this ladder pattern every group's 3rd place ("<letter>3") has an
+    # identical record (1 win, 0 draws, 2 losses, same GD/GF) -> full tie,
+    # so the deterministic group-letter fallback picks the first 8 groups
+    assert {r.team for r in flagged} == {f"{l}3" for l in ALL_GROUPS[:8]}
+
+
 def test_compute_round_of_32_incomplete_groups_marked_unconfirmed():
     matches = []
     for letter in ALL_GROUPS:

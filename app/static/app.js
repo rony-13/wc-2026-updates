@@ -141,6 +141,7 @@ async function loadToday() {
     $("#today-date").textContent = new Date(data.date + "T00:00:00")
       .toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
     renderToday();
+    renderGroups();  // group cards reflect live status too -- keep them in sync
   } catch (e) {
     setStatus(null, false);
   }
@@ -389,10 +390,17 @@ function wireTabs() {
 }
 
 /* ---- group tables ----------------------------------------------------- */
-function groupCard(g) {
+// Which groups currently have a live match -- driven by the same `is_live`
+// flag already used for the Today cards, so both stay perfectly in sync.
+function liveGroupSet() {
+  if (!lastToday || !lastToday.matches) return new Set();
+  return new Set(lastToday.matches.filter((m) => m.is_live && m.group).map((m) => m.group));
+}
+
+function groupCard(g, liveGroups) {
   const rows = g.rows.map((r) => {
     const tier = classify(r.team);          // 'fav' | 'follow' | null
-    const cls = [r.qualifies ? "qualify" : "", tier === "fav" ? "is-fav" : tier === "follow" ? "is-follow" : ""]
+    const cls = [(r.qualifies || r.provisional_qualify) ? "qualify" : "", tier === "fav" ? "is-fav" : tier === "follow" ? "is-follow" : ""]
       .filter(Boolean).join(" ");
     const star = tier === "fav" ? "★" : "";
     return `
@@ -404,8 +412,9 @@ function groupCard(g) {
       <td class="pts">${r.points}</td>
     </tr>`;
   }).join("");
+  const isLive = liveGroups && liveGroups.has(g.group);
   return `
-    <div class="groupcard">
+    <div class="groupcard${isLive ? " is-live" : ""}">
       <div class="gc-head">${escapeHtml(g.group)}</div>
       <table class="table">
         <thead><tr>
@@ -428,7 +437,8 @@ function renderToday() {
 
 function renderGroups() {
   if (!lastGroups) return;
-  $("#groups").innerHTML = lastGroups.groups.map(groupCard).join("");
+  const live = liveGroupSet();
+  $("#groups").innerHTML = lastGroups.groups.map((g) => groupCard(g, live)).join("");
 }
 
 async function loadGroups() {

@@ -62,6 +62,7 @@ class StandingRow:
     points: int = 0
     rank: int = 0
     qualifies: bool = False       # top two of the group
+    provisional_qualify: bool = False  # currently projected in the best-8 thirds (see config.SHOW_PROJECTED_THIRDS)
 
     @property
     def goal_difference(self) -> int:

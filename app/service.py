@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 from .models import Match, LIVE, FINISHED
 from .providers import build_provider_chain, ProviderError
 from .standings import compute_standings
-from .knockout import compute_round_of_32, compute_knockout_bracket, current_stage
+from .knockout import compute_round_of_32, compute_knockout_bracket, current_stage, best_eight_thirds
 from .store import CsvStore
 
 WORLDCUP26 = "worldcup26.ir"
@@ -310,6 +310,12 @@ class WorldCupService:
     def get_groups(self) -> dict:
         matches, source, updated_at = self._snapshot()
         tables = compute_standings(matches)
+        if getattr(self.config, "SHOW_PROJECTED_THIRDS", True):
+            # Mutates the same StandingRow objects already in `tables` --
+            # rank_third_place_teams/best_eight_thirds return references,
+            # not copies, so this is reflected below with no extra wiring.
+            for row in best_eight_thirds(tables):
+                row.provisional_qualify = True
         return {
             "source": source,
             "updated_at": updated_at,
