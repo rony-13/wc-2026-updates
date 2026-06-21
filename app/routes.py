@@ -36,6 +36,11 @@ def api_groups():
     return jsonify(_service().get_groups())
 
 
+@bp.route("/api/knockout/round-of-32")
+def api_round_of_32():
+    return jsonify(_service().get_round_of_32())
+
+
 @bp.route("/api/teams")
 def api_teams():
     return jsonify({"teams": _service().get_teams()})

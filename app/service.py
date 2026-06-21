@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo
 from .models import Match, LIVE, FINISHED
 from .providers import build_provider_chain, ProviderError
 from .standings import compute_standings
+from .knockout import compute_round_of_32
 from .store import CsvStore
 
 WORLDCUP26 = "worldcup26.ir"
@@ -316,6 +317,19 @@ class WorldCupService:
                 {"group": g, "rows": [r.to_dict() for r in rows]}
                 for g, rows in tables.items()
             ],
+        }
+
+    def get_round_of_32(self) -> dict:
+        """Projected (or, once decided, confirmed) Round-of-32 bracket.
+        See app/knockout.py for the full methodology and its documented
+        limitations -- this is always our own best-effort projection for
+        the 8 third-place slots until FIFA's official assignment is final."""
+        matches, source, updated_at = self._snapshot()
+        fixtures = compute_round_of_32(matches)
+        return {
+            "source": source,
+            "updated_at": updated_at,
+            "fixtures": fixtures,
         }
 
     def _match_view(self, m: Match) -> dict:
