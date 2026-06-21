@@ -34,7 +34,7 @@ GAMES_URL = "https://worldcup26.ir/get/games"
 _GROUP_LETTERS = set("ABCDEFGHIJKL")
 _KNOCKOUT_STAGE = {
     "R32": "LAST_32", "R16": "LAST_16", "QF": "LAST_8",
-    "SF": "LAST_4", "TP": "THIRD_PLACE", "3P": "THIRD_PLACE", "F": "FINAL",
+    "SF": "LAST_4", "3RD": "THIRD_PLACE", "FINAL": "FINAL",
 }
 _NOT_STARTED = {"", "notstarted", "not_started", "ns", "scheduled", "upcoming", "tbd"}
 

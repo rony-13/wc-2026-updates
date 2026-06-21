@@ -201,3 +201,178 @@ def compute_round_of_32(matches: List[Match]) -> List[dict]:
         fixtures.append({"match_id": match_id, "home": home, "away": away})
 
     return fixtures
+
+
+# ---------------------------------------------------------------------------
+# Round of 16 through the Final.
+#
+# Unlike the Round of 32, none of this involves predicting who WINS a given
+# match -- that's not something this app does or should claim to do. Each
+# later-round slot just references an earlier match by id ("WM" = winner of
+# that match, "LM" = loser of it, for the third-place game). The two
+# templates below were extracted directly from the real worldcup26.ir
+# schedule data (match ids 89-104), same as R32_TEMPLATE.
+ROUND_OF_16_TEMPLATE = [
+    (89, ("WM", 74), ("WM", 77)),
+    (90, ("WM", 73), ("WM", 75)),
+    (91, ("WM", 76), ("WM", 78)),
+    (92, ("WM", 79), ("WM", 80)),
+    (93, ("WM", 83), ("WM", 84)),
+    (94, ("WM", 81), ("WM", 82)),
+    (95, ("WM", 86), ("WM", 88)),
+    (96, ("WM", 85), ("WM", 87)),
+]
+QUARTER_FINALS_TEMPLATE = [
+    (97, ("WM", 89), ("WM", 90)),
+    (98, ("WM", 93), ("WM", 94)),
+    (99, ("WM", 91), ("WM", 92)),
+    (100, ("WM", 95), ("WM", 96)),
+]
+SEMI_FINALS_TEMPLATE = [
+    (101, ("WM", 97), ("WM", 98)),
+    (102, ("WM", 99), ("WM", 100)),
+]
+THIRD_PLACE_TEMPLATE = [
+    (103, ("LM", 101), ("LM", 102)),
+]
+FINAL_TEMPLATE = [
+    (104, ("WM", 101), ("WM", 102)),
+]
+
+
+def _match_outcome(m: Optional[Match]):
+    """Returns (winner, loser), or (None, None) if not yet determinable.
+    A tied score on a FINISHED knockout match means it went to penalties --
+    this feed has no shootout data, so that case is also left unresolved
+    rather than guessed."""
+    if m is None or m.status != FINISHED or m.home_score is None or m.away_score is None:
+        return None, None
+    if m.home_score > m.away_score:
+        return m.home, m.away
+    if m.away_score > m.home_score:
+        return m.away, m.home
+    return None, None  # draw at full time -- decided by penalties, not in this feed
+
+
+def _attach_match_result(fixture: dict, by_id: Dict[str, Match]) -> dict:
+    """Overlay the REAL match record's score/status/kickoff onto a computed
+    fixture, independent of how its home/away got resolved (group
+    projection for R32, or an earlier-round chain for R16+). A tied score
+    on a FINISHED match is exposed via `decided_by_penalties` -- the score
+    itself is real and worth showing, even though (per _match_outcome) we
+    can't say who actually won without shootout data this feed lacks."""
+    m = by_id.get(str(fixture["match_id"]))
+    fixture["status"] = m.status if m else None
+    fixture["kickoff"] = m.utc_date if m else None
+    fixture["venue"] = m.venue if m else None
+    if m and m.home_score is not None and m.away_score is not None:
+        fixture["score"] = {"home": m.home_score, "away": m.away_score}
+        fixture["decided_by_penalties"] = (
+            m.status == FINISHED and m.home_score == m.away_score
+        )
+    else:
+        fixture["score"] = None
+        fixture["decided_by_penalties"] = False
+    return fixture
+
+
+def _resolve_chain_round(
+    template: list, by_id: Dict[str, Match], by_id_resolved: Dict[int, dict],
+) -> List[dict]:
+    """Resolve one later-round (R16+) using already-resolved earlier rounds.
+    `by_id_resolved` accumulates {match_id: fixture_dict} across rounds as
+    they're computed, in order, so each round can look up its own sources."""
+    fixtures = []
+
+    def resolve(role: str, ref_match_id: int) -> dict:
+        ref_real = by_id.get(str(ref_match_id))
+        winner, loser = _match_outcome(ref_real)
+        team = winner if role == "WM" else loser
+        verb = "Winner" if role == "WM" else "Loser"
+        result = {
+            "rule": f"{verb} of Match {ref_match_id}",
+            "team": team,
+            "confirmed": team is not None,
+            "candidates": None,
+        }
+        if team is None:
+            # not decided yet -- surface the two teams competing in the
+            # source match, if known, purely as information (not a guess at
+            # who wins)
+            ref_fixture = by_id_resolved.get(ref_match_id)
+            if ref_fixture:
+                c = [ref_fixture["home"]["team"], ref_fixture["away"]["team"]]
+                result["candidates"] = [t for t in c if t] or None
+        return result
+
+    for match_id, (h_role, h_arg), (a_role, a_arg) in template:
+        home = resolve(h_role, h_arg)
+        away = resolve(a_role, a_arg)
+        fx = {"match_id": match_id, "home": home, "away": away}
+        _attach_match_result(fx, by_id)
+        fixtures.append(fx)
+        by_id_resolved[match_id] = fx
+    return fixtures
+
+
+def compute_knockout_bracket(matches: List[Match]) -> Dict[str, list]:
+    """Full bracket, all rounds, dynamically resolved from current match
+    data. Round of 32 is a live projection from group standings (see
+    compute_round_of_32); every later round only ever shows a team once
+    its actual source match has been played and decided -- never a
+    speculative guess at who wins. Every fixture (all rounds) also carries
+    the real match's own score/status/kickoff once that specific match
+    exists in current data, regardless of how its participants resolved."""
+    by_id: Dict[str, Match] = {m.id: m for m in matches}
+    by_id_resolved: Dict[int, dict] = {}
+
+    r32 = compute_round_of_32(matches)
+    for fx in r32:
+        _attach_match_result(fx, by_id)
+        by_id_resolved[fx["match_id"]] = fx
+
+    r16 = _resolve_chain_round(ROUND_OF_16_TEMPLATE, by_id, by_id_resolved)
+    qf = _resolve_chain_round(QUARTER_FINALS_TEMPLATE, by_id, by_id_resolved)
+    sf = _resolve_chain_round(SEMI_FINALS_TEMPLATE, by_id, by_id_resolved)
+    third = _resolve_chain_round(THIRD_PLACE_TEMPLATE, by_id, by_id_resolved)
+    final = _resolve_chain_round(FINAL_TEMPLATE, by_id, by_id_resolved)
+
+    return {
+        "round_of_32": r32,
+        "round_of_16": r16,
+        "quarter_finals": qf,
+        "semi_finals": sf,
+        "third_place": third,
+        "final": final,
+    }
+
+
+def current_stage(matches: List[Match]) -> str:
+    """Which stage should be the default tab right now: the earliest stage
+    that isn't fully decided yet. Falls through group stage -> R32 -> R16 ->
+    QF -> SF -> final once everything before it is finished."""
+    standings = compute_standings(matches)
+    groups_done = len(standings) == 12 and all(
+        _group_complete(matches, g) for g in standings
+    )
+    if not groups_done:
+        return "group_stage"
+
+    by_id: Dict[str, Match] = {m.id: m for m in matches}
+
+    def round_done(template: list) -> bool:
+        for match_id, _, _ in template:
+            m = by_id.get(str(match_id))
+            if m is None or m.status != FINISHED:
+                return False
+        return True
+
+    if not round_done(R32_TEMPLATE):
+        return "round_of_32"
+    if not round_done(ROUND_OF_16_TEMPLATE):
+        return "round_of_16"
+    if not round_done(QUARTER_FINALS_TEMPLATE):
+        return "quarter_finals"
+    if not round_done(SEMI_FINALS_TEMPLATE):
+        return "semi_finals"
+    return "final"

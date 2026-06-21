@@ -15,6 +15,8 @@ from app.knockout import (  # noqa: E402
     _assign_third_place_slots,
     _third_place_slots_in_match_order,
     compute_round_of_32,
+    compute_knockout_bracket,
+    current_stage,
 )
 
 ALL_GROUPS = list("ABCDEFGHIJKL")
@@ -242,6 +244,190 @@ def test_no_team_appears_twice_across_whole_bracket():
     fixtures = compute_round_of_32(matches)
     used = [fx["home"]["team"] for fx in fixtures] + [fx["away"]["team"] for fx in fixtures]
     assert len(used) == len(set(used)) == 32
+
+
+# ---- later rounds (R16 through Final): real chain through match results ---
+
+def _full_group_stage_matches():
+    matches = []
+    for letter in ALL_GROUPS:
+        teams = [f"{letter}1", f"{letter}2", f"{letter}3", f"{letter}4"]
+        matches += _round_robin(letter, teams, None)
+    return matches
+
+
+def _decide(match_id, group, winner, loser, hs=2, as_=0):
+    """A FINISHED knockout match with a clear winner (winner is always
+    'home' here; _match_outcome doesn't care which side, only the score)."""
+    return _m(group, winner, loser, hs, as_, status=FINISHED, mid=str(match_id))
+
+
+def test_r16_shows_candidates_not_a_guess_when_source_match_undecided():
+    matches = _full_group_stage_matches()
+    bracket = compute_knockout_bracket(matches)
+    r16 = bracket["round_of_16"]
+    m89 = next(fx for fx in r16 if fx["match_id"] == 89)
+    # match 89 = Winner(74) vs Winner(77) -- neither R32 match has been
+    # played, so neither side should claim a team...
+    assert m89["home"]["team"] is None
+    assert m89["away"]["team"] is None
+    assert m89["home"]["confirmed"] is False
+    # ...but should surface the two teams who WILL play that R32 match, as
+    # information only, not a prediction of who wins it
+    assert m89["home"]["candidates"] is not None
+    assert len(m89["home"]["candidates"]) == 2
+
+
+def test_r16_resolves_once_source_r32_match_is_decided():
+    matches = _full_group_stage_matches()
+    r32 = compute_round_of_32(matches)
+    m74 = next(fx for fx in r32 if fx["match_id"] == 74)
+    m77 = next(fx for fx in r32 if fx["match_id"] == 77)
+    # actually play out matches 74 and 77
+    matches.append(_decide(74, None, m74["home"]["team"], m74["away"]["team"], 3, 1))
+    matches.append(_decide(77, None, m77["away"]["team"], m77["home"]["team"], 2, 0))
+
+    bracket = compute_knockout_bracket(matches)
+    m89 = next(fx for fx in bracket["round_of_16"] if fx["match_id"] == 89)
+    assert m89["home"]["team"] == m74["home"]["team"]
+    assert m89["home"]["confirmed"] is True
+    assert m89["away"]["team"] == m77["away"]["team"]
+    assert m89["away"]["confirmed"] is True
+
+
+def test_tied_finished_knockout_match_left_unresolved_not_guessed():
+    # a FINISHED knockout match with equal scores (would've gone to
+    # penalties) -- we have no shootout data, so this must NOT be guessed
+    matches = _full_group_stage_matches()
+    r32 = compute_round_of_32(matches)
+    m74 = next(fx for fx in r32 if fx["match_id"] == 74)
+    matches.append(_m(None, m74["home"]["team"], m74["away"]["team"], 1, 1,
+                       status=FINISHED, mid="74"))
+    bracket = compute_knockout_bracket(matches)
+    m89 = next(fx for fx in bracket["round_of_16"] if fx["match_id"] == 89)
+    assert m89["home"]["team"] is None
+    assert m89["home"]["confirmed"] is False
+
+
+def test_full_tournament_chain_resolves_to_a_single_champion():
+    """Play out an entire synthetic tournament end-to-end and confirm the
+    Final correctly resolves to exactly the two semi-final winners."""
+    matches = _full_group_stage_matches()
+    r32 = compute_round_of_32(matches)
+    assert all(fx["home"]["team"] and fx["away"]["team"] for fx in r32)
+
+    # decide every R32 match: home side always "wins" 2-0 for simplicity
+    for fx in r32:
+        matches.append(_decide(fx["match_id"], None, fx["home"]["team"], fx["away"]["team"]))
+
+    bracket = compute_knockout_bracket(matches)
+    r16 = bracket["round_of_16"]
+    assert all(fx["home"]["team"] and fx["away"]["team"] for fx in r16), \
+        "every R16 slot should resolve once all R32 matches are decided"
+
+    for fx in r16:
+        matches.append(_decide(fx["match_id"], None, fx["home"]["team"], fx["away"]["team"]))
+
+    bracket = compute_knockout_bracket(matches)
+    qf = bracket["quarter_finals"]
+    assert all(fx["home"]["team"] and fx["away"]["team"] for fx in qf)
+    for fx in qf:
+        matches.append(_decide(fx["match_id"], None, fx["home"]["team"], fx["away"]["team"]))
+
+    bracket = compute_knockout_bracket(matches)
+    sf = bracket["semi_finals"]
+    assert all(fx["home"]["team"] and fx["away"]["team"] for fx in sf)
+    for fx in sf:
+        matches.append(_decide(fx["match_id"], None, fx["home"]["team"], fx["away"]["team"]))
+
+    bracket = compute_knockout_bracket(matches)
+    final = bracket["final"][0]
+    third = bracket["third_place"][0]
+    assert final["home"]["team"] and final["away"]["team"]
+    assert final["home"]["confirmed"] and final["away"]["confirmed"]
+    # the final's two teams must be exactly the two SF winners (in some order)
+    sf_winners = {sf[0]["home"]["team"], sf[1]["home"]["team"]}  # home always "won" by construction
+    assert {final["home"]["team"], final["away"]["team"]} == sf_winners
+    # third place game gets the two SF LOSERS, not winners
+    sf_losers = {sf[0]["away"]["team"], sf[1]["away"]["team"]}
+    assert {third["home"]["team"], third["away"]["team"]} == sf_losers
+
+
+# ---- current_stage() -------------------------------------------------------
+
+def test_current_stage_progression():
+    # genuinely incomplete group stage: group A's full 6-fixture schedule
+    # exists, but only the first game has actually been played
+    incomplete = _round_robin("Group A", ["A1", "A2", "A3", "A4"], None)
+    for gm in incomplete[1:]:
+        gm.status = SCHEDULED
+        gm.home_score = gm.away_score = None
+    for letter in ALL_GROUPS[1:]:
+        teams = [f"{letter}1", f"{letter}2", f"{letter}3", f"{letter}4"]
+        incomplete += _round_robin(letter, teams, None)
+    assert current_stage(incomplete) == "group_stage"
+
+    # fully complete group stage -> round of 32 is current
+    matches = _full_group_stage_matches()
+    r32 = compute_round_of_32(matches)
+    assert current_stage(matches) == "round_of_32"
+
+    for fx in r32:
+        matches.append(_decide(fx["match_id"], None, fx["home"]["team"], fx["away"]["team"]))
+    assert current_stage(matches) == "round_of_16"
+
+    bracket = compute_knockout_bracket(matches)
+    for fx in bracket["round_of_16"]:
+        matches.append(_decide(fx["match_id"], None, fx["home"]["team"], fx["away"]["team"]))
+    assert current_stage(matches) == "quarter_finals"
+
+    bracket = compute_knockout_bracket(matches)
+    for fx in bracket["quarter_finals"]:
+        matches.append(_decide(fx["match_id"], None, fx["home"]["team"], fx["away"]["team"]))
+    assert current_stage(matches) == "semi_finals"
+
+    bracket = compute_knockout_bracket(matches)
+    for fx in bracket["semi_finals"]:
+        matches.append(_decide(fx["match_id"], None, fx["home"]["team"], fx["away"]["team"]))
+    assert current_stage(matches) == "final"
+
+
+# ---- score/status enrichment ----------------------------------------------
+
+def test_fixture_carries_real_score_once_match_is_played():
+    matches = _full_group_stage_matches()
+    r32 = compute_round_of_32(matches)
+    m73 = next(fx for fx in r32 if fx["match_id"] == 73)
+    matches.append(_decide(73, None, m73["home"]["team"], m73["away"]["team"], 3, 1))
+
+    bracket = compute_knockout_bracket(matches)
+    fx73 = next(fx for fx in bracket["round_of_32"] if fx["match_id"] == 73)
+    assert fx73["score"] == {"home": 3, "away": 1}
+    assert fx73["status"] == FINISHED
+    assert fx73["decided_by_penalties"] is False
+
+
+def test_fixture_score_is_none_before_match_played():
+    matches = _full_group_stage_matches()
+    bracket = compute_knockout_bracket(matches)
+    fx73 = next(fx for fx in bracket["round_of_32"] if fx["match_id"] == 73)
+    assert fx73["score"] is None
+    assert fx73["status"] is None
+
+
+def test_tied_score_flagged_as_decided_by_penalties():
+    matches = _full_group_stage_matches()
+    r32 = compute_round_of_32(matches)
+    m73 = next(fx for fx in r32 if fx["match_id"] == 73)
+    matches.append(_m(None, m73["home"]["team"], m73["away"]["team"], 1, 1,
+                       status=FINISHED, mid="73"))
+    bracket = compute_knockout_bracket(matches)
+    fx73 = next(fx for fx in bracket["round_of_32"] if fx["match_id"] == 73)
+    assert fx73["score"] == {"home": 1, "away": 1}
+    assert fx73["decided_by_penalties"] is True
+    # and -- critically -- still no fabricated winner for the R16 slot that follows
+    r16_dependent = next(fx for fx in bracket["round_of_16"] if fx["match_id"] == 90)
+    assert r16_dependent["home"]["team"] is None  # match 90 = WM(73) vs WM(75)
 
 
 if __name__ == "__main__":

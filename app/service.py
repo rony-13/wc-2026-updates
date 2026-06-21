@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 from .models import Match, LIVE, FINISHED
 from .providers import build_provider_chain, ProviderError
 from .standings import compute_standings
-from .knockout import compute_round_of_32
+from .knockout import compute_round_of_32, compute_knockout_bracket, current_stage
 from .store import CsvStore
 
 WORLDCUP26 = "worldcup26.ir"
@@ -330,6 +330,19 @@ class WorldCupService:
             "source": source,
             "updated_at": updated_at,
             "fixtures": fixtures,
+        }
+
+    def get_knockout_bracket(self) -> dict:
+        """Full bracket, every round, dynamically resolved from current
+        match data. See app/knockout.py for methodology. `current_stage`
+        tells the frontend which tab should be open by default."""
+        matches, source, updated_at = self._snapshot()
+        rounds = compute_knockout_bracket(matches)
+        return {
+            "source": source,
+            "updated_at": updated_at,
+            "current_stage": current_stage(matches),
+            "rounds": rounds,
         }
 
     def _match_view(self, m: Match) -> dict:

@@ -1,21 +1,30 @@
 :root {
   --bg: #0e1a24;
+  --bg-glow: #15303f;
   --surface: #16242e;
   --surface-2: #1e323e;
   --line: #294150;
+  --row-border: rgba(41, 65, 80, 0.5);
   --text: #e8eef2;
   --muted: #8aa0ad;
   --qualify: #2fbf71;
   --qualify-tint: rgba(47, 191, 113, 0.10);
   --live: #ff5252;
   --accent: #f4c95d;
+  --accent-ink: #1a1406;      /* text sitting ON TOP of an --accent chip */
 
   /* personal allegiance tiers (distinct from the green/red/accent signals) */
   --fav: #ff9f1c;                         /* favorite — warmest, most eye-catching */
   --fav-tint: rgba(255, 159, 28, 0.16);
   --fav-glow: rgba(255, 159, 28, 0.32);
+  --fav-card-top: #34301f;
   --follow: #a78bfa;                      /* following — cooler, secondary */
   --follow-tint: rgba(167, 139, 250, 0.15);
+  --follow-card-top: #2a2548;
+
+  --hover-surface: #223a48;
+  --topbar-grad-1: rgba(20, 38, 50, 0.95);
+  --topbar-grad-2: rgba(14, 26, 36, 0.95);
 
   --font-display: "Arial Narrow", "Roboto Condensed", "Helvetica Neue Condensed",
     "Liberation Sans Narrow", system-ui, sans-serif;
@@ -23,19 +32,55 @@
     sans-serif;
 }
 
+:root[data-theme="light"] {
+  --bg: #f3f6f8;
+  --bg-glow: #e3edf3;
+  --surface: #ffffff;
+  --surface-2: #eef2f5;
+  --line: #dbe3e8;
+  --row-border: rgba(150, 170, 180, 0.45);
+  --text: #182229;
+  --muted: #5c6e79;
+  --qualify: #1f9d5c;
+  --qualify-tint: rgba(31, 157, 92, 0.10);
+  --live: #d8362a;
+  --accent: #c08600;
+  --accent-ink: #2a1c00;
+
+  --fav: #d97400;
+  --fav-tint: rgba(217, 116, 0, 0.12);
+  --fav-glow: rgba(217, 116, 0, 0.25);
+  --fav-card-top: #fdf0d6;
+  --follow: #7456d6;
+  --follow-tint: rgba(116, 86, 214, 0.12);
+  --follow-card-top: #ece6fb;
+
+  --hover-surface: #e7edf1;
+  --topbar-grad-1: rgba(255, 255, 255, 0.96);
+  --topbar-grad-2: rgba(244, 248, 250, 0.96);
+}
+
 * { box-sizing: border-box; }
+
+/* [hidden] must always win over any other display rule, no matter what gets
+   added later -- we've now hit "a later display:flex/grid rule silently
+   overrides [hidden]" twice (the My Teams picker, and the tab panels), so
+   this is a permanent backstop rather than a per-case patch. */
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
   display: flex;
   flex-direction: column;
   background:
-    radial-gradient(1200px 600px at 50% -10%, #15303f 0%, transparent 60%),
+    radial-gradient(1200px 600px at 50% -10%, var(--bg-glow) 0%, transparent 60%),
     var(--bg);
   color: var(--text);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
+  min-height: 100dvh; /* avoids mobile address-bar show/hide jank that 100vh alone is prone to */
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 /* ---- top bar ---------------------------------------------------------- */
@@ -46,7 +91,7 @@ body {
   gap: 16px;
   padding: 14px 22px;
   border-bottom: 2px solid var(--accent);
-  background: linear-gradient(180deg, rgba(20, 38, 50, 0.95), rgba(14, 26, 36, 0.95));
+  background: linear-gradient(180deg, var(--topbar-grad-1), var(--topbar-grad-2));
   position: sticky;
   top: 0;
   z-index: 10;
@@ -85,6 +130,32 @@ body {
 
 .topbar-right { display: flex; align-items: center; gap: 16px; }
 
+.theme-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px;
+}
+.theme-opt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.theme-opt:hover { color: var(--text); }
+.theme-opt.active { background: var(--accent); color: var(--accent-ink); }
+
 .myteams-btn {
   display: inline-flex; align-items: center; gap: 7px;
   font-family: var(--font-body); font-size: 13px; font-weight: 600;
@@ -93,7 +164,7 @@ body {
   border-radius: 999px; padding: 8px 14px;
   transition: border-color 0.15s, background 0.15s;
 }
-.myteams-btn:hover { border-color: var(--fav); background: #223a48; }
+.myteams-btn:hover { border-color: var(--fav); background: var(--hover-surface); }
 .myteams-btn .mt-star { color: var(--fav); font-size: 14px; line-height: 1; }
 
 .status { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
@@ -156,10 +227,10 @@ main { padding: 12px 24px; max-width: none; margin: 0; flex: 1 0 auto; }
 }
 .scorecard.is-live { border-color: rgba(255, 82, 82, 0.55); }
 /* a favorite/followed team playing today tints the whole card */
-.scorecard.follow-card { border-color: rgba(167, 139, 250, 0.5); background: linear-gradient(180deg, #2a2548, var(--surface)); }
+.scorecard.follow-card { border-color: rgba(167, 139, 250, 0.5); background: linear-gradient(180deg, var(--follow-card-top), var(--surface)); }
 .scorecard.fav-card {
   border-color: var(--fav);
-  background: linear-gradient(180deg, #34301f, var(--surface));
+  background: linear-gradient(180deg, var(--fav-card-top), var(--surface));
   box-shadow: 0 0 0 1px var(--fav-glow), 0 8px 24px -12px var(--fav-glow);
 }
 .sc-team .team-star { color: var(--fav); margin-right: 5px; font-size: 14px; }
@@ -186,6 +257,120 @@ main { padding: 12px 24px; max-width: none; margin: 0; flex: 1 0 auto; }
 }
 .scorecard.sched .sc-score { color: var(--muted); }
 .sc-venue { color: var(--muted); font-size: 11px; border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 2px; }
+
+/* ---- stage tabs --------------------------------------------------------- */
+.stage-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0 14px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 16px;
+}
+.stage-tab {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.stage-tab:hover { color: var(--text); border-color: var(--accent); }
+.stage-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* ---- merged knockout bracket (Round of 32 -> Final, one view) ----------- */
+.bracket-wrap {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 22px;
+  overflow-x: auto;
+  padding: 6px 4px 26px;
+}
+.bracket-lines {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.bracket-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  gap: 8px;
+  flex: 0 0 auto;
+  width: clamp(172px, 11vw, 232px);
+}
+.bracket-col-final {
+  width: clamp(168px, 10.5vw, 224px);
+  justify-content: center;
+  gap: 46px;
+}
+.bracket-third-label {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-align: center;
+  margin-bottom: 6px;
+}
+.bb {
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: clamp(6px, 0.5vw, 9px) clamp(9px, 0.7vw, 13px);
+  font-size: clamp(12px, 0.85vw, 14px);
+  position: relative;
+  z-index: 1;
+}
+.bb-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9.5px;
+  color: var(--muted);
+  margin-bottom: 3px;
+  letter-spacing: 0.02em;
+}
+.bb-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  min-height: 18px;
+}
+.bb-row + .bb-row { border-top: 1px dashed var(--line); padding-top: 4px; margin-top: 2px; }
+.bb-flag { font-size: 14px; line-height: 1; width: 16px; text-align: center; flex: 0 0 auto; }
+.bb-name {
+  flex: 1 1 auto;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bb-name.bb-unknown {
+  font-weight: 400;
+  font-style: italic;
+  color: var(--muted);
+  font-size: 10.5px;
+  white-space: normal;
+  line-height: 1.25;
+}
+.bb-name.is-fav { color: var(--fav); }
+.bb-name.is-follow { color: var(--follow); }
+.bb-score { font-weight: 700; min-width: 14px; text-align: right; flex: 0 0 auto; }
+.bb-row.bb-winner .bb-name { color: var(--qualify); }
+.bb-row.bb-winner .bb-score { color: var(--qualify); }
+.bb-pso { font-size: 9.5px; color: var(--muted); margin-top: 3px; font-style: italic; }
 
 /* ---- group tables ----------------------------------------------------- */
 .groupgrid {
@@ -225,7 +410,7 @@ table.table th.team-col, table.table td.team-col { text-align: left; padding-lef
 table.table td { padding: 5px 6px; text-align: right; font-variant-numeric: tabular-nums; }
 table.table .team-wrap { display: flex; align-items: center; gap: 8px; }
 table.table td.pts { font-weight: 700; }
-table.table tbody tr { border-bottom: 1px solid rgba(41, 65, 80, 0.5); }
+table.table tbody tr { border-bottom: 1px solid var(--row-border); }
 table.table tbody tr:last-child { border-bottom: none; }
 
 /* fixed-width star slot keeps the team column aligned across all rows */
@@ -342,10 +527,24 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 
 /* ---- fill the viewport height (no dead space, footer at the bottom) ---- */
 main { display: flex; flex-direction: column; }
-main > .band:last-of-type { flex: 1 1 auto; display: flex; flex-direction: column; margin-bottom: 0; }
-main > .band:last-of-type .groupgrid { flex: 1 1 auto; grid-auto-rows: 1fr; align-content: stretch; }
+/* Whichever tab panel is actually visible stretches to fill remaining space
+   -- NOT :last-of-type, which broke once more sections (the knockout tabs)
+   were added after the groups panel and silently started targeting the
+   wrong (and possibly hidden) element. */
+main > .tab-panel:not([hidden]) { flex: 1 1 auto; display: flex; flex-direction: column; margin-bottom: 0; }
+main > .tab-panel:not([hidden]) .groupgrid { flex: 1 1 auto; grid-auto-rows: minmax(min-content, 1fr); align-content: stretch; }
 .groupcard { display: flex; flex-direction: column; }
-.groupcard table.table { flex: 1 1 auto; height: 100%; }
+.groupcard table.table { flex: 1 1 auto; }
+/* The viewport-fill stretch above is a desktop-only nicety (a handful of
+   grid rows in 3-4 columns). Below this width, many groups stack into 1-2
+   columns -- forcing equal-height rows there has caused real clipping
+   before, so this size class just sizes content naturally and lets the
+   page scroll, which is the normal, safe mobile pattern anyway. */
+@media (max-width: 860px) {
+  main > .tab-panel:not([hidden]) { flex: 0 1 auto; }
+  main > .tab-panel:not([hidden]) .groupgrid { flex: 0 1 auto; grid-auto-rows: auto; align-content: start; }
+  .groupcard table.table { flex: 0 1 auto; }
+}
 /* keep row content vertically centered when rows stretch to fill height */
 table.table td, table.table th { vertical-align: middle; }
 .groupcard table.table tbody { vertical-align: middle; }

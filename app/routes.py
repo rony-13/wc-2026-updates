@@ -41,6 +41,11 @@ def api_round_of_32():
     return jsonify(_service().get_round_of_32())
 
 
+@bp.route("/api/knockout/bracket")
+def api_knockout_bracket():
+    return jsonify(_service().get_knockout_bracket())
+
+
 @bp.route("/api/teams")
 def api_teams():
     return jsonify({"teams": _service().get_teams()})

@@ -4,6 +4,21 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>World Cup 2026 — Live Dashboard</title>
+  <script>
+    // Set the theme before first paint so there's no flash of the wrong
+    // theme -- this has to run synchronously, before the stylesheet/body
+    // render, which is why it's an inline blocking script rather than
+    // something deferred in app.js.
+    (function () {
+      try {
+        var saved = localStorage.getItem("wc2026-theme") || "system";
+        var resolved = saved === "system"
+          ? (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+          : saved;
+        document.documentElement.dataset.theme = resolved;
+      } catch (e) {}
+    })();
+  </script>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
@@ -15,6 +30,11 @@
     </div>
     <div class="topbar-clock" id="topbar-clock" aria-live="off"></div>
     <div class="topbar-right">
+      <div class="theme-switch" role="group" aria-label="Theme">
+        <button type="button" class="theme-opt" data-theme-choice="system" title="Match system theme" aria-label="Match system theme">🖥</button>
+        <button type="button" class="theme-opt" data-theme-choice="dark" title="Dark theme" aria-label="Dark theme">🌙</button>
+        <button type="button" class="theme-opt" data-theme-choice="light" title="Light theme" aria-label="Light theme">☀</button>
+      </div>
       {% if not read_only %}
       <button type="button" class="myteams-btn" id="myteams-btn" aria-haspopup="dialog" aria-expanded="false">
         <span class="mt-star">★</span> My Teams
@@ -52,7 +72,12 @@
       </div>
     </section>
 
-    <section class="band" aria-labelledby="groups-h">
+    <nav class="stage-tabs" id="stage-tabs" role="tablist" aria-label="Tournament stage">
+      <button type="button" class="stage-tab" data-tab="group_stage" role="tab">Group Stage</button>
+      <button type="button" class="stage-tab" data-tab="knockout_stage" role="tab">Knockout Stage</button>
+    </nav>
+
+    <section class="band tab-panel" data-panel="group_stage" aria-labelledby="groups-h">
       <div class="band-head">
         <h2 id="groups-h">Groups</h2>
         <span class="band-sub legend">
@@ -62,6 +87,35 @@
         </span>
       </div>
       <div class="groupgrid" id="groups"></div>
+    </section>
+
+    <section class="band tab-panel" data-panel="knockout_stage" hidden>
+      <div class="band-head">
+        <h2>Knockout Stage</h2>
+        <span class="band-sub legend">
+          <span class="legend-item"><span class="legend-swatch sw-qualify"></span> Winner / advanced</span>
+          <span class="legend-item"><span class="legend-swatch sw-fav"></span> Favorite</span>
+          <span class="legend-item"><span class="legend-swatch sw-follow"></span> Following</span>
+        </span>
+      </div>
+      <div class="bracket-wrap" id="bracket-wrap">
+        <svg class="bracket-lines" id="bracket-lines"></svg>
+        <div class="bracket-col" data-col="r32-left" id="col-r32-left"></div>
+        <div class="bracket-col" data-col="r16-left" id="col-r16-left"></div>
+        <div class="bracket-col" data-col="qf-left" id="col-qf-left"></div>
+        <div class="bracket-col" data-col="sf-left" id="col-sf-left"></div>
+        <div class="bracket-col bracket-col-final" data-col="final" id="col-final">
+          <div class="bracket-final-slot" id="col-final-match"></div>
+          <div class="bracket-third-slot">
+            <div class="bracket-third-label">3rd Place</div>
+            <div id="col-third-match"></div>
+          </div>
+        </div>
+        <div class="bracket-col" data-col="sf-right" id="col-sf-right"></div>
+        <div class="bracket-col" data-col="qf-right" id="col-qf-right"></div>
+        <div class="bracket-col" data-col="r16-right" id="col-r16-right"></div>
+        <div class="bracket-col" data-col="r32-right" id="col-r32-right"></div>
+      </div>
     </section>
   </main>
 
@@ -79,6 +133,7 @@
     window.WC_CONFIG = {
       todayInterval: {{ today_interval }},
       groupsInterval: {{ groups_interval }},
+      bracketInterval: {{ groups_interval }},
       readOnly: {{ 'true' if read_only else 'false' }}
     };
   </script>

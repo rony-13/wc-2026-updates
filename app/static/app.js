@@ -8,6 +8,9 @@ let prefs = { favorite: null, following: [] };
 let teams = [];
 let lastGroups = null;   // cache last payloads so we can re-render on pref change
 let lastToday = null;
+let lastBracket = null;
+let activeTab = "group_stage";
+let defaultTabSet = false;  // only auto-pick the current-stage tab once, on first load
 let followSet = new Set();
 
 function rebuildFollowSet() {
@@ -143,6 +146,248 @@ async function loadToday() {
   }
 }
 
+/* ---- merged knockout bracket (Round of 32 -> Final, one connected chart) */
+
+// Flag emoji lookup. Plain ISO 3166-1 alpha-2 codes render as regional
+// indicator pairs; England and Scotland aren't sovereign countries and use
+// the special Unicode "tag sequence" flag form instead (built from
+// codepoints, not literal characters, to avoid any encoding mishaps).
+function regionalFlag(code) {
+  return String.fromCodePoint(...[...code.toUpperCase()].map((c) => 127397 + c.charCodeAt(0)));
+}
+function tagFlag(tag) {
+  const codes = [0x1f3f4];
+  for (const ch of tag) codes.push(0xe0000 + ch.charCodeAt(0));
+  codes.push(0xe007f);
+  return String.fromCodePoint(...codes);
+}
+const FLAG_SPECIAL = { ENG: tagFlag("gbeng"), SCT: tagFlag("gbsct") };
+const TEAM_FLAGS = {
+  "mexico": "MX", "south africa": "ZA", "south korea": "KR", "korea republic": "KR",
+  "czechia": "CZ", "czech republic": "CZ",
+  "canada": "CA", "switzerland": "CH",
+  "bosnia and herzegovina": "BA", "bosnia & herzegovina": "BA", "bosnia-herzegovina": "BA",
+  "qatar": "QA",
+  "brazil": "BR", "morocco": "MA", "haiti": "HT", "scotland": "SCT",
+  "united states": "US", "usa": "US", "united states of america": "US",
+  "paraguay": "PY", "australia": "AU",
+  "türkiye": "TR", "turkiye": "TR", "turkey": "TR",
+  "germany": "DE", "curaçao": "CW", "curacao": "CW",
+  "ivory coast": "CI", "côte d'ivoire": "CI", "cote d'ivoire": "CI",
+  "ecuador": "EC",
+  "netherlands": "NL", "japan": "JP", "sweden": "SE", "tunisia": "TN",
+  "belgium": "BE", "egypt": "EG", "iran": "IR", "new zealand": "NZ",
+  "spain": "ES", "cape verde": "CV", "cabo verde": "CV",
+  "saudi arabia": "SA", "uruguay": "UY",
+  "france": "FR", "senegal": "SN", "iraq": "IQ", "norway": "NO",
+  "argentina": "AR", "algeria": "DZ", "austria": "AT", "jordan": "JO",
+  "portugal": "PT",
+  "dr congo": "CD", "congo dr": "CD", "democratic republic of the congo": "CD",
+  "uzbekistan": "UZ", "colombia": "CO",
+  "england": "ENG",
+  "croatia": "HR", "ghana": "GH", "panama": "PA",
+};
+function flagFor(team) {
+  if (!team) return "";
+  const code = TEAM_FLAGS[team.toLowerCase().trim()];
+  if (!code) return "";
+  return FLAG_SPECIAL[code] || regionalFlag(code);
+}
+
+// Bracket topology -- which match ids sit in which column, top-to-bottom,
+// derived directly from (and verified against) the real R32/R16/QF/SF/Final
+// templates in app/knockout.py: each side's columns are nested in nasting
+// order so connector lines never cross.
+const BRACKET_LAYOUT = {
+  r32_left: [74, 77, 73, 75, 83, 84, 81, 82],
+  r16_left: [89, 90, 93, 94],
+  qf_left: [97, 98],
+  sf_left: [101],
+  r32_right: [76, 78, 79, 80, 86, 88, 85, 87],
+  r16_right: [91, 92, 95, 96],
+  qf_right: [99, 100],
+  sf_right: [102],
+  final: 104,
+  third: 103,
+};
+const PARENT_OF = {
+  74: 89, 77: 89, 73: 90, 75: 90, 76: 91, 78: 91, 79: 92, 80: 92,
+  83: 93, 84: 93, 81: 94, 82: 94, 86: 95, 88: 95, 85: 96, 87: 96,
+  89: 97, 90: 97, 93: 98, 94: 98, 91: 99, 92: 99, 95: 100, 96: 100,
+  97: 101, 98: 101, 99: 102, 100: 102, 101: 104, 102: 104,
+};
+const SIDE_OF = {};
+for (const mid of [...BRACKET_LAYOUT.r32_left, ...BRACKET_LAYOUT.r16_left, ...BRACKET_LAYOUT.qf_left, ...BRACKET_LAYOUT.sf_left]) {
+  SIDE_OF[mid] = "left";
+}
+for (const mid of [...BRACKET_LAYOUT.r32_right, ...BRACKET_LAYOUT.r16_right, ...BRACKET_LAYOUT.qf_right, ...BRACKET_LAYOUT.sf_right]) {
+  SIDE_OF[mid] = "right";
+}
+
+function fixtureById(matchId) {
+  if (!lastBracket) return null;
+  const r = lastBracket.rounds;
+  const all = [].concat(r.round_of_32, r.round_of_16, r.quarter_finals, r.semi_finals, r.final, r.third_place);
+  return all.find((fx) => fx.match_id === matchId) || null;
+}
+
+function kickoffShort(iso) {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    return `${dd}/${mm}`;
+  } catch (e) {
+    return "";
+  }
+}
+
+function bracketSideV2(side) {
+  if (side.team) {
+    const tier = classify(side.team);
+    const cls = tier === "fav" ? "is-fav" : tier === "follow" ? "is-follow" : "";
+    return { flag: flagFor(side.team), name: `<span class="bb-name ${cls}">${escapeHtml(side.team)}</span>` };
+  }
+  if (side.candidates && side.candidates.length) {
+    return { flag: "", name: `<span class="bb-name bb-unknown">${side.candidates.map(escapeHtml).join(" / ")}</span>` };
+  }
+  return { flag: "", name: `<span class="bb-name bb-unknown">${escapeHtml(side.rule)}</span>` };
+}
+
+function bracketBoxV2(fx) {
+  const decided = fx.score && fx.score.home !== fx.score.away;
+  const homeWins = decided && fx.score.home > fx.score.away;
+  const awayWins = decided && fx.score.away > fx.score.home;
+  const h = bracketSideV2(fx.home);
+  const a = bracketSideV2(fx.away);
+  const dateLabel = kickoffShort(fx.kickoff);
+  const hScore = fx.score ? `<span class="bb-score">${fx.score.home}</span>` : "";
+  const aScore = fx.score ? `<span class="bb-score">${fx.score.away}</span>` : "";
+  const pso = fx.decided_by_penalties ? `<div class="bb-pso">Decided on penalties</div>` : "";
+  return `
+    <div class="bb" data-match-id="${fx.match_id}">
+      <div class="bb-meta"><span>[${fx.match_id}]</span><span>${dateLabel}</span></div>
+      <div class="bb-row ${homeWins ? "bb-winner" : ""}">
+        <span class="bb-flag">${h.flag}</span>${h.name}${hScore}
+      </div>
+      <div class="bb-row ${awayWins ? "bb-winner" : ""}">
+        <span class="bb-flag">${a.flag}</span>${a.name}${aScore}
+      </div>
+      ${pso}
+    </div>`;
+}
+
+function renderBracketColumn(hostId, matchIds) {
+  const host = $(`#${hostId}`);
+  if (!host) return;
+  host.innerHTML = matchIds.map((mid) => {
+    const fx = fixtureById(mid);
+    return fx ? bracketBoxV2(fx) : "";
+  }).join("");
+}
+
+function renderKnockoutBracket() {
+  if (!lastBracket) return;
+  renderBracketColumn("col-r32-left", BRACKET_LAYOUT.r32_left);
+  renderBracketColumn("col-r16-left", BRACKET_LAYOUT.r16_left);
+  renderBracketColumn("col-qf-left", BRACKET_LAYOUT.qf_left);
+  renderBracketColumn("col-sf-left", BRACKET_LAYOUT.sf_left);
+  renderBracketColumn("col-sf-right", BRACKET_LAYOUT.sf_right);
+  renderBracketColumn("col-qf-right", BRACKET_LAYOUT.qf_right);
+  renderBracketColumn("col-r16-right", BRACKET_LAYOUT.r16_right);
+  renderBracketColumn("col-r32-right", BRACKET_LAYOUT.r32_right);
+
+  const finalFx = fixtureById(BRACKET_LAYOUT.final);
+  const thirdFx = fixtureById(BRACKET_LAYOUT.third);
+  $("#col-final-match").innerHTML = finalFx ? bracketBoxV2(finalFx) : "";
+  $("#col-third-match").innerHTML = thirdFx ? bracketBoxV2(thirdFx) : "";
+
+  drawBracketLines();
+}
+
+function drawBracketLines() {
+  const wrap = $("#bracket-wrap");
+  const svg = $("#bracket-lines");
+  if (!wrap || !svg || wrap.offsetParent === null) return;  // hidden tab right now
+  const wrapRect = wrap.getBoundingClientRect();
+  svg.setAttribute("width", wrap.scrollWidth);
+  svg.setAttribute("height", wrap.scrollHeight);
+  svg.innerHTML = "";
+
+  const ns = "http://www.w3.org/2000/svg";
+  function pointFor(matchId, edge) {
+    const el = wrap.querySelector(`[data-match-id="${matchId}"]`);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return {
+      x: (edge === "right" ? r.right : r.left) - wrapRect.left + wrap.scrollLeft,
+      y: r.top + r.height / 2 - wrapRect.top + wrap.scrollTop,
+    };
+  }
+
+  Object.keys(PARENT_OF).forEach((key) => {
+    const childId = Number(key);
+    const parentId = PARENT_OF[childId];
+    const side = SIDE_OF[childId];
+    const p1 = pointFor(childId, side === "left" ? "right" : "left");
+    const p2 = pointFor(parentId, side === "left" ? "left" : "right");
+    if (!p1 || !p2) return;
+
+    const fx = fixtureById(childId);
+    const decided = fx && fx.score && fx.score.home !== fx.score.away;
+    const midX = (p1.x + p2.x) / 2;
+    const path = document.createElementNS(ns, "path");
+    path.setAttribute("d", `M ${p1.x},${p1.y} H ${midX} V ${p2.y} H ${p2.x}`);
+    path.setAttribute("stroke", decided ? "var(--qualify)" : "var(--muted)");
+    path.setAttribute("stroke-width", decided ? 2 : 1.4);
+    path.setAttribute("fill", "none");
+    svg.appendChild(path);
+  });
+}
+
+async function loadBracket() {
+  try {
+    const res = await fetch("/api/knockout/bracket", { cache: "no-store" });
+    const data = await res.json();
+    lastBracket = data;
+    renderKnockoutBracket();
+    if (!defaultTabSet) {
+      defaultTabSet = true;
+      const tab = (data.current_stage && data.current_stage !== "group_stage") ? "knockout_stage" : "group_stage";
+      setActiveTab(tab);
+    }
+  } catch (e) {
+    // bracket data is supplementary -- a failed fetch here shouldn't disturb
+    // the rest of the page or its connection-status indicator
+  }
+}
+
+function setActiveTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll(".stage-tab").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.tab === tab);
+  });
+  document.querySelectorAll(".tab-panel").forEach((panel) => {
+    panel.hidden = panel.dataset.panel !== tab;
+  });
+  if (tab === "knockout_stage") {
+    // boxes were just unhidden, so their layout didn't exist a moment ago
+    requestAnimationFrame(() => drawBracketLines());
+  }
+}
+
+function wireTabs() {
+  document.querySelectorAll(".stage-tab").forEach((btn) => {
+    btn.addEventListener("click", () => setActiveTab(btn.dataset.tab));
+  });
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (activeTab === "knockout_stage") drawBracketLines(); }, 150);
+  });
+}
+
 /* ---- group tables ----------------------------------------------------- */
 function groupCard(g) {
   const rows = g.rows.map((r) => {
@@ -223,6 +468,7 @@ async function savePreferences() {
   // re-render immediately for a snappy feel; the PUT persists in the background
   renderToday();
   renderGroups();
+  renderKnockoutBracket();
   renderPicker();
   try {
     const res = await fetch("/api/preferences", {
@@ -317,6 +563,48 @@ function wirePicker() {
   });
 }
 
+/* ---- theme (dark / light / system) ------------------------------------- */
+const THEME_KEY = "wc2026-theme";
+
+function systemPrefersDark() {
+  return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+}
+
+function resolveTheme(choice) {
+  return choice === "system" ? (systemPrefersDark() ? "dark" : "light") : choice;
+}
+
+function applyTheme(choice) {
+  document.documentElement.dataset.theme = resolveTheme(choice);
+  document.querySelectorAll(".theme-opt").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.themeChoice === choice);
+  });
+}
+
+function initTheme() {
+  let saved = "system";
+  try { saved = localStorage.getItem(THEME_KEY) || "system"; } catch (e) {}
+  applyTheme(saved);
+
+  document.querySelectorAll(".theme-opt").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const choice = btn.dataset.themeChoice;
+      try { localStorage.setItem(THEME_KEY, choice); } catch (e) {}
+      applyTheme(choice);
+    });
+  });
+
+  // if the user is following "system" and the OS theme changes while the
+  // app is open, update live rather than waiting for a reload
+  if (window.matchMedia) {
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+      let current = "system";
+      try { current = localStorage.getItem(THEME_KEY) || "system"; } catch (e) {}
+      if (current === "system") applyTheme("system");
+    });
+  }
+}
+
 /* ---- startup ---------------------------------------------------------- */
 function start(fn, seconds) {
   fn();
@@ -335,10 +623,14 @@ function tickClock() {
 }
 
 (async function init() {
+  initTheme();
   await Promise.all([loadPreferences(), loadTeams()]);
   wirePicker();
+  wireTabs();
+  setActiveTab("group_stage");  // sensible default while the real current stage loads
   start(loadToday, CFG.todayInterval);
   start(loadGroups, CFG.groupsInterval);
+  start(loadBracket, CFG.bracketInterval);
   start(tickClock, 1);
   // refresh the team list periodically so it fills in once live data arrives
   setInterval(loadTeams, 5 * 60 * 1000);
