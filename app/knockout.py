@@ -29,30 +29,52 @@ fixtures pair specific groups' winners/runners-up directly with no
 third-place involvement; the other 8 pair a group's winner against "the
 best-placed qualifying third from one of these 5 specific groups."
 
-ASSIGNING qualifying third-place teams to those 8 slots is NOT uniquely
-determined by which 8 groups qualify -- we verified exhaustively that every
-one of the 495 possible 8-of-12 combinations has multiple (6 to 38+) valid
-ways to fill the slots, never exactly one. FIFA's real rule must also use
-each team's specific RANK among the 8 qualifiers, and we don't have FIFA's
-official rank-to-slot document. So R32 third-place assignments are always
-labeled PROJECTED, computed via a verified bipartite-matching algorithm
-(Kuhn's augmenting-path algorithm, processing teams best-rank-first) that is
-mathematically guaranteed to find a complete, valid assignment for any
-combination -- exhaustively proven against all 495 combinations and, for
-one of them, all 40,320 possible rank orderings, zero failures. This is OUR
-deterministic, reproducible best-effort projection, not a claim of matching
-FIFA's exact draw mechanism. The instant a Round-of-32 fixture's real team
-names appear in the live feed (replacing the placeholder labels), that's
-FIFA's actual official assignment and should always be preferred over this
-projection -- see service.py's merge logic.
+ASSIGNING qualifying third-place teams to those 8 slots is NOT something we
+compute or match-make ourselves: FIFA publishes the exact slotting as a
+fixed lookup table (Annexe C of the FIFA World Cup 2026 Regulations), one
+row for each of the 495 possible 8-of-12 qualifying combinations. The
+assignment depends ONLY on WHICH 8 groups supply a qualifying third -- not
+on the teams' rank order among the 8, and not on any draw. So given the set
+of 8 qualifying groups we look the slotting up directly in
+data/annex_c_allocation.json (see _assign_third_place_slots).
+
+  Earlier versions of this module instead ran a bipartite matching
+  (Kuhn's algorithm) to fill the slots. That was a real bug: a matching
+  finds *a* valid assignment, but many combinations admit several valid
+  matchings, and FIFA's published one is a specific choice the algorithm
+  had no way to reproduce. The result was a bracket that satisfied every
+  eligibility rule yet still disagreed with FIFA / Google / Olympics
+  (e.g. it paired Germany-vs-3rd-of-A and France-vs-3rd-of-D when the
+  official slotting is Germany-vs-3rd-of-D (Paraguay) and France-vs-3rd-
+  of-F (Sweden)). The Annexe C lookup replaces that guess with the real
+  table.
+
+data/annex_c_allocation.json reproduces FIFA's Annexe C exactly (all 3,960
+group-to-slot entries cross-checked against the official FIFA regulations
+PDF; eligibility, bijection and no-team-faces-its-own-group-winner
+invariants all verified in tests). The instant a Round-of-32 fixture's real
+team names appear in the live feed (replacing the placeholder labels),
+that's FIFA's actual official assignment and should still be preferred over
+this projection -- see service.py's merge logic -- but the projection now
+matches it rather than diverging from it.
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Dict, List, Optional
 from collections import OrderedDict
 
 from .models import Match, FINISHED
 from .standings import compute_standings
+
+# FIFA's official Annexe C third-place allocation table: 495 rows, one per
+# possible 8-of-12 qualifying combination. Key = the 8 qualifying groups'
+# letters sorted into a string (e.g. "ABCDEFGH"); value = {"1A": "<group>",
+# ...} mapping each group-winner slot to the third-placed group it faces.
+_ALLOCATION_PATH = Path(__file__).with_name("data") / "annex_c_allocation.json"
+with _ALLOCATION_PATH.open(encoding="utf-8") as _f:
+    ANNEX_C_ALLOCATION: Dict[str, Dict[str, str]] = json.load(_f)
 
 # (match_id, (home_role, home_arg), (away_role, away_arg))
 #   role "W"   -> winner of group `arg` (a single letter)
@@ -117,33 +139,31 @@ def _third_place_slots_in_match_order() -> List[tuple]:
     return slots
 
 
-def _assign_third_place_slots(ranked_pool_letters: List[str]) -> Dict[str, str]:
-    """Kuhn's augmenting-path bipartite matching. `ranked_pool_letters` is
-    the 8 qualifying groups' letters in best-to-worst rank order. Returns
-    {slot_winner_group_letter: assigned_third_place_group_letter},
-    guaranteed complete (proven exhaustively -- see module docstring)."""
-    slots = _third_place_slots_in_match_order()
-    slot_ids = [s for s, _ in slots]
-    eligible_map = {s: e for s, e in slots}
-    match_to_group: Dict[str, str] = {}
+def _assign_third_place_slots(qualifying_group_letters: List[str]) -> Dict[str, str]:
+    """Map each group-winner slot to the third-placed group it faces, using
+    FIFA's official Annexe C allocation table.
 
-    def try_assign(group: str, visited: set) -> bool:
-        for slot_id in slot_ids:
-            if group not in eligible_map[slot_id] or slot_id in visited:
-                continue
-            visited.add(slot_id)
-            if slot_id not in match_to_group:
-                match_to_group[slot_id] = group
-                return True
-            bumped = match_to_group[slot_id]
-            if try_assign(bumped, visited):
-                match_to_group[slot_id] = group
-                return True
-        return False
+    `qualifying_group_letters` is the set of groups whose third-placed teams
+    qualify (the best 8). Annexe C keys ONLY on this set -- the rank order
+    among the 8 is irrelevant to the slotting -- so the input order does not
+    matter. Returns {winner_group_letter: third_place_group_letter}, e.g.
+    {"E": "D", "I": "F", ...}.
 
-    for group in ranked_pool_letters:
-        try_assign(group, set())
-    return match_to_group
+    Returns {} when a complete set of exactly 8 distinct qualifying groups
+    isn't known yet (early in the tournament, before enough groups have a
+    third-placed team). In that case the 3RD slots simply stay unresolved
+    rather than showing a guess -- the assignment genuinely cannot be known
+    until the 8 qualifiers are settled.
+    """
+    groups = sorted(set(qualifying_group_letters))
+    if len(groups) != 8:
+        return {}
+    row = ANNEX_C_ALLOCATION.get("".join(groups))
+    if row is None:
+        return {}
+    # row keys are winner slots "1A".."1L"; strip the leading "1" to get the
+    # bare winner-group letter the caller resolves against.
+    return {slot[1:]: third_group for slot, third_group in row.items()}
 
 
 def compute_round_of_32(matches: List[Match]) -> List[dict]:

@@ -10,6 +10,7 @@ from app.models import Match, StandingRow, FINISHED, SCHEDULED  # noqa: E402
 from app.standings import compute_standings  # noqa: E402
 from app.knockout import (  # noqa: E402
     R32_TEMPLATE,
+    ANNEX_C_ALLOCATION,
     rank_third_place_teams,
     best_eight_thirds,
     _assign_third_place_slots,
@@ -116,6 +117,45 @@ def test_higher_ranked_team_gets_priority_when_only_one_slot_fits():
     result = _assign_third_place_slots(ranked)
     assert len(result) == 8
     assert len(set(result.values())) == 8
+
+
+# ---- official Annexe C correctness (the fix) ------------------------------
+
+def test_assignment_matches_official_annex_c_table():
+    """The slotting must come straight from FIFA's Annexe C table, not from
+    any matching/heuristic. For combo ABCDEFGH the official row is fixed."""
+    result = _assign_third_place_slots(list("ABCDEFGH"))
+    expected_row = ANNEX_C_ALLOCATION["ABCDEFGH"]
+    expected = {slot[1:]: third for slot, third in expected_row.items()}
+    assert result == expected
+
+
+def test_assignment_is_order_independent_by_design():
+    """Annexe C keys only on the SET of 8 qualifying groups, so rank order
+    among them must not change the slotting (this is the corrected
+    behavior -- the old bipartite version was order-sensitive)."""
+    base = _assign_third_place_slots(list("BCDEFGIJ"))
+    shuffled = _assign_third_place_slots(list("JIGFEDCB"))
+    assert base == shuffled and len(base) == 8
+
+
+def test_assignment_reproduces_known_official_pairings():
+    """Cross-check against the publicly reported official slotting: with the
+    current crop of qualifying thirds (a combination containing B, D, E, F),
+    Germany (winner E) faces Paraguay (3rd of D) and France (winner I) faces
+    Sweden (3rd of F) -- the exact pairings that exposed the original bug."""
+    result = _assign_third_place_slots(list("BCDEFGIJ"))
+    assert result["E"] == "D"   # Germany  vs 3rd of Group D (Paraguay)
+    assert result["I"] == "F"   # France   vs 3rd of Group F (Sweden)
+    assert result["D"] == "B"   # USA      vs 3rd of Group B (Bosnia)
+
+
+def test_assignment_empty_until_eight_qualifiers_known():
+    """Before exactly 8 distinct qualifying groups are settled, there is no
+    Annexe C row to apply -- the slots must stay unresolved, not guessed."""
+    assert _assign_third_place_slots(list("ABCDEFG")) == {}      # only 7
+    assert _assign_third_place_slots(list("ABCDEFGHI")) == {}    # 9
+    assert _assign_third_place_slots([]) == {}
 
 
 # ---- third-place ranking ---------------------------------------------------
