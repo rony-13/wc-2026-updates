@@ -32,11 +32,13 @@ def _row(group_letter, team, points, gd, gf):
     return r
 
 
-def _m(group, home, away, hs, as_, status=FINISHED, mid="x"):
+def _m(group, home, away, hs, as_, status=FINISHED, mid="x",
+       home_pens=None, away_pens=None):
     return Match(
         id=mid, group=group, stage="GROUP_STAGE",
         utc_date="2026-06-18T18:00:00+00:00", status=status,
         home=home, away=away, home_score=hs, away_score=as_,
+        home_penalty_score=home_pens, away_penalty_score=away_pens,
     )
 
 
@@ -494,9 +496,51 @@ def test_tied_score_flagged_as_decided_by_penalties():
     fx73 = next(fx for fx in bracket["round_of_32"] if fx["match_id"] == 73)
     assert fx73["score"] == {"home": 1, "away": 1}
     assert fx73["decided_by_penalties"] is True
+    assert fx73["penalty_score"] is None  # feed reported no shootout score
     # and -- critically -- still no fabricated winner for the R16 slot that follows
     r16_dependent = next(fx for fx in bracket["round_of_16"] if fx["match_id"] == 90)
     assert r16_dependent["home"]["team"] is None  # match 90 = WM(73) vs WM(75)
+
+
+def test_penalty_shootout_score_resolves_winner_of_tied_knockout_match():
+    # Regression test: a knockout match tied at full time (e.g. Germany vs
+    # Paraguay, Netherlands vs Morocco) used to leave the next round's slot
+    # permanently unresolved even after the shootout finished, because the
+    # feed's home_penalty_score/away_penalty_score were never read. They
+    # should now decide the winner just like a regular scoreline would.
+    matches = _full_group_stage_matches()
+    r32 = compute_round_of_32(matches)
+    m73 = next(fx for fx in r32 if fx["match_id"] == 73)
+    home_team, away_team = m73["home"]["team"], m73["away"]["team"]
+    matches.append(_m(None, home_team, away_team, 1, 1, status=FINISHED, mid="73",
+                       home_pens=5, away_pens=4))
+
+    bracket = compute_knockout_bracket(matches)
+    fx73 = next(fx for fx in bracket["round_of_32"] if fx["match_id"] == 73)
+    assert fx73["score"] == {"home": 1, "away": 1}
+    assert fx73["decided_by_penalties"] is True
+    assert fx73["penalty_score"] == {"home": 5, "away": 4}
+
+    # the R16 slot fed by this match's winner must now resolve to the team
+    # that won on penalties (home_team, 5-4), not stay stuck unconfirmed
+    r16_dependent = next(fx for fx in bracket["round_of_16"] if fx["match_id"] == 90)
+    winner_side = r16_dependent["home"] if r16_dependent["home"]["rule"].endswith("73") \
+        else r16_dependent["away"]
+    assert winner_side["team"] == home_team
+    assert winner_side["confirmed"] is True
+
+
+def test_penalty_shootout_tied_score_still_unresolved_without_penalty_data():
+    # If the feed reports a shootout tie score (or omits it) rather than a
+    # real winner, we must still refuse to guess.
+    matches = _full_group_stage_matches()
+    r32 = compute_round_of_32(matches)
+    m73 = next(fx for fx in r32 if fx["match_id"] == 73)
+    matches.append(_m(None, m73["home"]["team"], m73["away"]["team"], 1, 1,
+                       status=FINISHED, mid="73", home_pens=None, away_pens=None))
+    bracket = compute_knockout_bracket(matches)
+    r16_dependent = next(fx for fx in bracket["round_of_16"] if fx["match_id"] == 90)
+    assert r16_dependent["home"]["team"] is None
 
 
 if __name__ == "__main__":

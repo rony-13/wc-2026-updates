@@ -226,9 +226,17 @@ class WorldCup26Provider(BaseProvider):
                 status = _status(g.get("finished", "FALSE"), g.get("time_elapsed", ""))
                 if status == SCHEDULED:
                     home_score = away_score = None  # ignore 0–0 placeholders before kickoff
+                    home_pens = away_pens = None
                 else:
                     home_score = _to_int(g.get("home_score"))
                     away_score = _to_int(g.get("away_score"))
+                    # Knockout matches level at full time carry a separate
+                    # penalty-shootout score (home_penalty_score/away_penalty_score)
+                    # -- previously dropped entirely, which left every
+                    # penalty-decided knockout match's winner unresolvable
+                    # downstream even though the feed had the answer.
+                    home_pens = _to_int(g.get("home_penalty_score"))
+                    away_pens = _to_int(g.get("away_penalty_score"))
 
                 matches.append(
                     Match(
@@ -241,6 +249,8 @@ class WorldCup26Provider(BaseProvider):
                         away=away,
                         home_score=home_score,
                         away_score=away_score,
+                        home_penalty_score=home_pens,
+                        away_penalty_score=away_pens,
                         minute=_minute(g.get("time_elapsed", "")) if status == LIVE else None,
                         venue=(trusted or {}).get("venue"),
                         home_scorers=_parse_scorers(g.get("home_scorers")),

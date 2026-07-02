@@ -263,15 +263,20 @@ FINAL_TEMPLATE = [
 def _match_outcome(m: Optional[Match]):
     """Returns (winner, loser), or (None, None) if not yet determinable.
     A tied score on a FINISHED knockout match means it went to penalties --
-    this feed has no shootout data, so that case is also left unresolved
-    rather than guessed."""
+    resolve it from the feed's penalty-shootout score when present. That
+    score is only ever populated once the shootout is actually over, so a
+    tie with no penalty score reported (yet) is still correctly left
+    unresolved rather than guessed."""
     if m is None or m.status != FINISHED or m.home_score is None or m.away_score is None:
         return None, None
     if m.home_score > m.away_score:
         return m.home, m.away
     if m.away_score > m.home_score:
         return m.away, m.home
-    return None, None  # draw at full time -- decided by penalties, not in this feed
+    hp, ap = m.home_penalty_score, m.away_penalty_score
+    if hp is not None and ap is not None and hp != ap:
+        return (m.home, m.away) if hp > ap else (m.away, m.home)
+    return None, None  # draw at full time, no shootout score reported yet
 
 
 def _attach_match_result(fixture: dict, by_id: Dict[str, Match]) -> dict:
@@ -290,9 +295,20 @@ def _attach_match_result(fixture: dict, by_id: Dict[str, Match]) -> dict:
         fixture["decided_by_penalties"] = (
             m.status == FINISHED and m.home_score == m.away_score
         )
+        if (
+            fixture["decided_by_penalties"]
+            and m.home_penalty_score is not None
+            and m.away_penalty_score is not None
+        ):
+            fixture["penalty_score"] = {
+                "home": m.home_penalty_score, "away": m.away_penalty_score,
+            }
+        else:
+            fixture["penalty_score"] = None
     else:
         fixture["score"] = None
         fixture["decided_by_penalties"] = False
+        fixture["penalty_score"] = None
     return fixture
 
 

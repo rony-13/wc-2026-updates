@@ -257,15 +257,23 @@ function bracketSideV2(side) {
 }
 
 function bracketBoxV2(fx) {
-  const decided = fx.score && fx.score.home !== fx.score.away;
-  const homeWins = decided && fx.score.home > fx.score.away;
-  const awayWins = decided && fx.score.away > fx.score.home;
+  const pens = fx.penalty_score;
+  const decided = (fx.score && fx.score.home !== fx.score.away)
+    || (pens && pens.home !== pens.away);
+  const homeWins = decided && (
+    pens ? pens.home > pens.away : fx.score.home > fx.score.away
+  );
+  const awayWins = decided && (
+    pens ? pens.away > pens.home : fx.score.away > fx.score.home
+  );
   const h = bracketSideV2(fx.home);
   const a = bracketSideV2(fx.away);
   const dateLabel = kickoffShort(fx.kickoff);
   const hScore = fx.score ? `<span class="bb-score">${fx.score.home}</span>` : "";
   const aScore = fx.score ? `<span class="bb-score">${fx.score.away}</span>` : "";
-  const pso = fx.decided_by_penalties ? `<div class="bb-pso">Decided on penalties</div>` : "";
+  const pso = fx.decided_by_penalties
+    ? `<div class="bb-pso">${pens ? `Penalties ${pens.home}\u2013${pens.away}` : "Decided on penalties"}</div>`
+    : "";
   return `
     <div class="bb" data-match-id="${fx.match_id}">
       <div class="bb-meta"><span>[${fx.match_id}]</span><span>${dateLabel}</span></div>

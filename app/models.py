@@ -30,6 +30,8 @@ class Match:
     away: str
     home_score: Optional[int] = None
     away_score: Optional[int] = None
+    home_penalty_score: Optional[int] = None  # shootout score; only set on
+    away_penalty_score: Optional[int] = None  # a FINISHED knockout match tied at full time
     minute: Optional[int] = None  # only meaningful while LIVE
     venue: Optional[str] = None
     home_scorers: list = field(default_factory=list)  # e.g. ["F. Balogun 31'", "F. Balogun 45'+5'"]

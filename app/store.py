@@ -20,7 +20,8 @@ from .models import Match
 
 _FIELDS = [
     "id", "group", "stage", "utc_date", "status",
-    "home", "away", "home_score", "away_score", "minute", "venue",
+    "home", "away", "home_score", "away_score",
+    "home_penalty_score", "away_penalty_score", "minute", "venue",
     "home_scorers", "away_scorers",
 ]
 
@@ -87,6 +88,8 @@ class CsvStore:
                         away=row["away"],
                         home_score=_to_int(row["home_score"]),
                         away_score=_to_int(row["away_score"]),
+                        home_penalty_score=_to_int(row.get("home_penalty_score", "")),
+                        away_penalty_score=_to_int(row.get("away_penalty_score", "")),
                         minute=_to_int(row["minute"]),
                         venue=row["venue"] or None,
                         home_scorers=_from_cell_list(row.get("home_scorers")),
