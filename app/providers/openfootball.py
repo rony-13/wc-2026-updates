@@ -70,8 +70,19 @@ class OpenFootballProvider(BaseProvider):
         for i, raw in enumerate(payload.get("matches", [])):
             score = raw.get("score") or {}
             ft = score.get("ft")
-            home_score: Optional[int] = ft[0] if ft else None
-            away_score: Optional[int] = ft[1] if ft else None
+            et = score.get("et")  # cumulative score after extra time, if played
+            pens = score.get("p")  # penalty-shootout score, if played
+            # The final result is the extra-time score when present (it's
+            # cumulative, not extra-time-only goals) -- using `ft` alone
+            # here previously made any match that went to extra time look
+            # tied even when it wasn't (e.g. a 1-1 at 90' that finished 2-1
+            # after ET), which would have wrongly flagged it as
+            # penalty-decided downstream.
+            final = et if et else ft
+            home_score: Optional[int] = final[0] if final else None
+            away_score: Optional[int] = final[1] if final else None
+            home_pens: Optional[int] = pens[0] if pens else None
+            away_pens: Optional[int] = pens[1] if pens else None
             status = FINISHED if ft else SCHEDULED
             matches.append(
                 Match(
@@ -84,6 +95,8 @@ class OpenFootballProvider(BaseProvider):
                     away=raw.get("team2", "TBD"),
                     home_score=home_score,
                     away_score=away_score,
+                    home_penalty_score=home_pens,
+                    away_penalty_score=away_pens,
                     venue=raw.get("ground"),
                 )
             )
