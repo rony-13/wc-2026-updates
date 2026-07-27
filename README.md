@@ -33,6 +33,9 @@ zero cost**.
 ![Dashboard screenshot](docs/screenshot.png)
 ![Knockout Page screenshot](docs/screenshot-knockout.png)
 
+![Final Dashboard screenshot](docs/screenshot-final.png)
+![Final Knockout Page screenshot](docs/screenshot-knockout-final.png)
+
 ---
 
 ## Why it's built this way
